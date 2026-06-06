@@ -113,6 +113,9 @@ class WhatsAppService:
     )
 
     _outgoing_message_selectors = (
+        '[data-testid="conversation-panel-messages"] [data-testid^="conv-msg-"]:has([data-testid="tail-out"])',
+        '[data-testid="conversation-panel-messages"] [data-testid="msg-container"]:has([data-testid="tail-out"])',
+        '[data-testid^="conv-msg-"]:has([data-testid="tail-out"])',
         '[data-testid="msg-container"]:has([data-testid="tail-out"])',
         '[data-testid^="conv-msg-"]:has([data-testid="tail-out"]) [data-testid="msg-container"]',
         'div.message-out',
@@ -123,16 +126,26 @@ class WhatsAppService:
         'div[role="row"]:has([data-icon="msg-dblcheck-ack"])',
     )
 
+    _conversation_messages_selectors = (
+        '[data-testid="conversation-panel-messages"]',
+        '[data-scrolltracepolicy="wa.web.conversation.messages"]',
+        '#main [data-tab="8"]',
+    )
+
     _sent_status_selectors = (
         '[data-icon="msg-check"]',
         '[data-icon="msg-dblcheck"]',
         '[data-icon="msg-dblcheck-ack"]',
+        '[aria-label*="Enviado" i]',
         '[aria-label*="Enviada" i]',
         '[aria-label*="Entregue" i]',
         '[aria-label*="Lida" i]',
         '[aria-label*="Sent" i]',
         '[aria-label*="Delivered" i]',
         '[aria-label*="Read" i]',
+        'title:has-text("wds-ic-check")',
+        'title:has-text("wds-ic-read")',
+        'title:has-text("wds-ic-delivered")',
     )
 
     _pending_status_selectors = (
@@ -141,6 +154,7 @@ class WhatsAppService:
         '[aria-label*="Pendente" i]',
         '[aria-label*="Sending" i]',
         '[aria-label*="Pending" i]',
+        'title:has-text("wds-ic-clock")',
     )
 
     _failed_status_selectors = (
@@ -250,15 +264,10 @@ class WhatsAppService:
         if message_box is None:
             raise MessageSendError("Campo de mensagem não encontrado")
 
-        self._wait_for_outgoing_messages_to_stabilize(page, self.config.message)
-        previous_outgoing_count = self._count_outgoing_message_bubbles(
-            page,
-            self.config.message,
-        )
-        previous_visible_message_count = self._count_visible_message_text_occurrences(
-            page,
-            self.config.message,
-        )
+        self._scroll_conversation_to_bottom(page)
+        self._wait_for_outgoing_messages_to_stabilize(page)
+        previous_outgoing_count = self._count_outgoing_message_bubbles(page)
+        previous_outgoing_keys = self._outgoing_message_keys(page)
 
         if not self._fill_message_box(page, message_box, self.config.message):
             current_content = self._read_textbox_content(message_box)
@@ -276,12 +285,14 @@ class WhatsAppService:
             message_box.click()
             page.keyboard.press("Enter")
 
+        page.wait_for_timeout(500)
+        self._scroll_conversation_to_bottom(page)
+
         send_confirmed = self._wait_for_send_confirmation(
             page,
             message_box,
-            self.config.message,
             previous_outgoing_count,
-            previous_visible_message_count,
+            previous_outgoing_keys,
             timeout_seconds=5,
         )
 
@@ -301,24 +312,24 @@ class WhatsAppService:
             send_confirmed = self._wait_for_send_confirmation(
                 page,
                 message_box,
-                self.config.message,
                 previous_outgoing_count,
-                previous_visible_message_count,
-                timeout_seconds=min(self.config.timeout_seconds, 10),
+                previous_outgoing_keys,
+                timeout_seconds=self.config.timeout_seconds,
             )
 
         if not send_confirmed:
             current_content = self._read_textbox_content(message_box)
-            outgoing_count = self._count_outgoing_message_bubbles(page, self.config.message)
-            visible_count = self._count_visible_message_text_occurrences(
+            outgoing_count = self._count_outgoing_message_bubbles(page)
+            latest_status = self._latest_new_outgoing_message_status(
                 page,
-                self.config.message,
+                previous_outgoing_count,
+                previous_outgoing_keys,
             )
             raise MessageSendError(
                 "Mensagem não foi confirmada pelo WhatsApp Web. "
                 f"Campo atual: {current_content!r}. "
                 f"Mensagens de saída antes/depois: {previous_outgoing_count}/{outgoing_count}. "
-                f"Ocorrências visíveis antes/depois: {previous_visible_message_count}/{visible_count}"
+                f"Status detectado: {latest_status}."
             )
 
         self.logger.info("Mensagem enviada e confirmada")
@@ -519,22 +530,24 @@ class WhatsAppService:
         self,
         page: Page,
         message_box: Locator,
-        message: str,
         previous_outgoing_count: int,
-        previous_visible_message_count: int,
+        previous_outgoing_keys: set[str],
         timeout_seconds: int,
     ) -> bool:
         deadline = time.monotonic() + timeout_seconds
-        new_outgoing_since: float | None = None
-        new_visible_text_since: float | None = None
+        last_logged_status: str | None = None
+        empty_composer_since: float | None = None
 
         while time.monotonic() < deadline:
             message_box_empty = self._normalize_text(self._read_textbox_content(message_box)) == ""
-            latest_message = self._latest_outgoing_message_bubble(page, message)
-            outgoing_count = self._count_outgoing_message_bubbles(page, message)
-            visible_message_count = self._count_visible_message_text_occurrences(page, message)
+            can_accept_empty_composer = False
+            latest_message = self._latest_new_outgoing_message_bubble(
+                page,
+                previous_outgoing_count,
+                previous_outgoing_keys,
+            )
 
-            if message_box_empty and latest_message is not None and outgoing_count > previous_outgoing_count:
+            if message_box_empty and latest_message is not None:
                 if self._has_any_related_element(latest_message, self._failed_status_selectors):
                     raise MessageSendError("WhatsApp Web indicou falha no envio da mensagem")
 
@@ -542,32 +555,41 @@ class WhatsAppService:
                     return True
 
                 if self._has_any_related_element(latest_message, self._pending_status_selectors):
-                    new_outgoing_since = None
-                    self.logger.info("Mensagem ainda pendente de envio no WhatsApp Web")
+                    if last_logged_status != "pendente":
+                        self.logger.info("Mensagem ainda pendente de envio no WhatsApp Web")
+                        last_logged_status = "pendente"
                 else:
-                    if new_outgoing_since is None:
-                        new_outgoing_since = time.monotonic()
-
-                    if time.monotonic() - new_outgoing_since >= 1.5:
+                    if last_logged_status != "sem_status":
                         self.logger.info(
-                            "Mensagem confirmada pela nova bolha de saída; "
-                            "status visual não encontrado no DOM do WhatsApp Web"
+                            "Nova mensagem de saida encontrada, mas sem status de envio confirmado"
+                        )
+                        last_logged_status = "sem_status"
+                    can_accept_empty_composer = True
+            else:
+                last_logged_status = None
+
+                if message_box_empty:
+                    self._scroll_conversation_to_bottom(page)
+                    can_accept_empty_composer = True
+
+            if can_accept_empty_composer:
+                if self._has_visible_message_failure(page):
+                    raise MessageSendError("WhatsApp Web indicou falha no envio da mensagem")
+
+                if self._has_visible_message_pending(page):
+                    empty_composer_since = None
+                else:
+                    if empty_composer_since is None:
+                        empty_composer_since = time.monotonic()
+
+                    if time.monotonic() - empty_composer_since >= 2:
+                        self.logger.info(
+                            "Mensagem aceita pelo WhatsApp Web: campo de composicao vazio "
+                            "e nenhum erro ou pendencia visivel"
                         )
                         return True
             else:
-                new_outgoing_since = None
-
-            if message_box_empty and visible_message_count > previous_visible_message_count:
-                if new_visible_text_since is None:
-                    new_visible_text_since = time.monotonic()
-
-                if time.monotonic() - new_visible_text_since >= 1.5:
-                    self.logger.info(
-                        "Mensagem confirmada pelo aumento de ocorrências visíveis no WhatsApp Web"
-                    )
-                    return True
-            else:
-                new_visible_text_since = None
+                empty_composer_since = None
 
             page.wait_for_timeout(300)
 
@@ -591,49 +613,59 @@ class WhatsAppService:
 
         return content if isinstance(content, str) else ""
 
-    def _count_outgoing_message_bubbles(self, page: Page, message: str) -> int:
+    def _count_outgoing_message_bubbles(self, page: Page, message: str | None = None) -> int:
         return len(self._outgoing_message_bubbles(page, message))
 
-    def _count_visible_message_text_occurrences(self, page: Page, message: str) -> int:
-        message_text = self._normalize_text(message)
-        if not message_text:
-            return 0
+    def _latest_new_outgoing_message_bubble(
+        self,
+        page: Page,
+        previous_outgoing_count: int,
+        previous_outgoing_keys: set[str],
+    ) -> Locator | None:
+        matches = self._outgoing_message_bubbles(page)
+        if not matches:
+            return None
 
-        try:
-            count = page.evaluate(
-                """
-                expected => {
-                    const normalize = value => (value || "")
-                        .replace(/\u200B/g, "")
-                        .replace(/\u00A0/g, " ")
-                        .replace(/\\s+/g, " ")
-                        .trim();
-                    const text = normalize(document.body.innerText);
-                    let total = 0;
-                    let index = text.indexOf(expected);
+        keyed_matches: list[Locator] = []
+        for match in matches:
+            key = self._outgoing_message_key(match)
+            if key is not None and key not in previous_outgoing_keys:
+                keyed_matches.append(match)
 
-                    while (index !== -1) {
-                        total += 1;
-                        index = text.indexOf(expected, index + expected.length);
-                    }
+        if keyed_matches:
+            return keyed_matches[-1]
 
-                    return total;
-                }
-                """,
-                message_text,
-            )
-        except PlaywrightError:
-            return 0
+        if len(matches) > previous_outgoing_count:
+            return matches[-1]
 
-        return count if isinstance(count, int) else 0
+        return None
 
-    def _latest_outgoing_message_bubble(self, page: Page, message: str) -> Locator | None:
-        matches = self._outgoing_message_bubbles(page, message)
-        return matches[-1] if matches else None
+    def _latest_new_outgoing_message_status(
+        self,
+        page: Page,
+        previous_outgoing_count: int,
+        previous_outgoing_keys: set[str],
+    ) -> str:
+        latest_message = self._latest_new_outgoing_message_bubble(
+            page,
+            previous_outgoing_count,
+            previous_outgoing_keys,
+        )
+        if latest_message is None:
+            return "nova mensagem de saída não encontrada"
 
-    def _outgoing_message_bubbles(self, page: Page, message: str) -> list[Locator]:
-        message_text = self._normalize_text(message)
-        if not message_text:
+        if self._has_any_related_element(latest_message, self._failed_status_selectors):
+            return "falha"
+        if self._has_any_related_element(latest_message, self._pending_status_selectors):
+            return "pendente"
+        if self._has_any_related_element(latest_message, self._sent_status_selectors):
+            return "enviada"
+
+        return "sem status de envio confirmado"
+
+    def _outgoing_message_bubbles(self, page: Page, message: str | None = None) -> list[Locator]:
+        message_text = self._normalize_text(message) if message is not None else None
+        if message is not None and not message_text:
             return []
 
         for selector in self._outgoing_message_selectors:
@@ -649,7 +681,7 @@ class WhatsAppService:
                     normalized_content = self._normalize_text(
                         container.inner_text(timeout=500)
                     )
-                    if message_text in normalized_content:
+                    if message_text is None or message_text in normalized_content:
                         selector_matches.append(container)
 
                 if selector_matches:
@@ -659,13 +691,107 @@ class WhatsAppService:
 
         return []
 
-    def _wait_for_outgoing_messages_to_stabilize(self, page: Page, message: str) -> None:
+    def _outgoing_message_keys(self, page: Page, message: str | None = None) -> set[str]:
+        keys: set[str] = set()
+
+        for bubble in self._outgoing_message_bubbles(page, message):
+            key = self._outgoing_message_key(bubble)
+            if key is not None:
+                keys.add(key)
+
+        return keys
+
+    def _outgoing_message_key(self, locator: Locator) -> str | None:
+        try:
+            key = locator.evaluate(
+                """
+                el => {
+                    let current = el;
+
+                    for (let depth = 0; current && depth < 10; depth += 1) {
+                        const dataId = current.getAttribute("data-id");
+                        if (dataId) {
+                            return `data-id:${dataId}`;
+                        }
+
+                        const prePlainText = current.getAttribute("data-pre-plain-text");
+                        if (prePlainText) {
+                            return `data-pre-plain-text:${prePlainText}`;
+                        }
+
+                        const id = current.getAttribute("id");
+                        if (id) {
+                            return `id:${id}`;
+                        }
+
+                        current = current.parentElement;
+                    }
+
+                    return null;
+                }
+                """,
+                timeout=500,
+            )
+        except PlaywrightError:
+            return None
+
+        return key if isinstance(key, str) and key else None
+
+    def _scroll_conversation_to_bottom(self, page: Page) -> None:
+        for selector in self._conversation_messages_selectors:
+            container = page.locator(selector).first
+            try:
+                if not container.is_visible(timeout=100):
+                    continue
+
+                container.evaluate(
+                    """
+                    el => {
+                        const nodes = [el, ...el.querySelectorAll("*")];
+                        for (const node of nodes) {
+                            if (node.scrollHeight > node.clientHeight) {
+                                node.scrollTop = node.scrollHeight;
+                            }
+                        }
+                    }
+                    """,
+                    timeout=500,
+                )
+                return
+            except PlaywrightError:
+                continue
+
+    def _has_visible_message_failure(self, page: Page) -> bool:
+        return self._has_visible_conversation_status(page, self._failed_status_selectors)
+
+    def _has_visible_message_pending(self, page: Page) -> bool:
+        return self._has_visible_conversation_status(page, self._pending_status_selectors)
+
+    def _has_visible_conversation_status(self, page: Page, selectors: tuple[str, ...]) -> bool:
+        for bubble in self._outgoing_message_bubbles(page):
+            if self._has_any_related_element(bubble, selectors):
+                return True
+
+        for container_selector in self._conversation_messages_selectors:
+            container = page.locator(container_selector).first
+            try:
+                if container.is_visible(timeout=100) and self._has_any_descendant(
+                    container,
+                    selectors,
+                ):
+                    return True
+            except PlaywrightError:
+                continue
+
+        return False
+
+    def _wait_for_outgoing_messages_to_stabilize(self, page: Page) -> None:
         deadline = time.monotonic() + min(self.config.timeout_seconds, 5)
         stable_since: float | None = None
         previous_count: int | None = None
 
         while time.monotonic() < deadline:
-            current_count = self._count_outgoing_message_bubbles(page, message)
+            current_count = self._count_outgoing_message_bubbles(page)
             if current_count == previous_count:
                 if stable_since is None:
                     stable_since = time.monotonic()
@@ -681,6 +807,8 @@ class WhatsAppService:
         roots = (
             locator,
             locator.locator('xpath=ancestor-or-self::*[@role="row"][1]'),
+            locator.locator('xpath=ancestor-or-self::*[@data-id][1]'),
+            locator.locator('xpath=ancestor-or-self::*[@data-testid="msg-container"][1]'),
             locator.locator(
                 'xpath=ancestor-or-self::div[contains(concat(" ", normalize-space(@class), " "), " message-out ")][1]'
             ),

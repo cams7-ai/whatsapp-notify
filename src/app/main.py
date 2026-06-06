@@ -98,7 +98,7 @@ INTERNAL_SERVER_ERROR_EXAMPLES = {
                 "code": "FALHA_NO_ENVIO",
                 "message": (
                     "Não foi possível confirmar o envio da mensagem: Mensagem não "
-                    "foi confirmada pelo WhatsApp Web."
+                    "foi confirmada pelo WhatsApp Web. Status detectado: pendente."
                 ),
             }
         },

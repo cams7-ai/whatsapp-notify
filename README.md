@@ -146,7 +146,7 @@ O `POST /notifications` responde somente depois que o Playwright finaliza a tent
 
 A resposta de sucesso inclui `elapsedTimeInSeconds`, medido desde o início do processamento da requisição até a confirmação do envio. Esse tempo inclui a execução do Playwright e eventual espera na fila interna de envio.
 
-A API retorna sucesso depois de detectar que a mensagem saiu do campo de composição e que ela apareceu na conversa. Quando o WhatsApp Web expõe o status no DOM, a confirmação usa os estados enviado, entregue ou lido; quando esses elementos não ficam acessíveis, a confirmação usa o aumento de ocorrências visíveis do texto enviado. Se houver erro explícito ou a confirmação não ocorrer até o timeout, a API retorna erro `500`.
+A API retorna sucesso depois que o WhatsApp Web confirma visualmente a mensagem como enviada, entregue ou lida. Quando o WhatsApp Web virtualiza a lista e não mantém a nova bolha acessível no DOM, a API aceita como sucesso o campo de composição vazio de forma estável, desde que não exista erro ou pendência visível. Se a mensagem ficar pendente, se houver erro explícito ou se o campo continuar preenchido até o timeout, a API retorna erro `500`.
 
 A execução do Playwright roda fora do event loop da FastAPI para manter a API responsiva durante o uso do Chromium. Os envios são serializados por processo para evitar disputa pelo mesmo perfil persistente do navegador.
 
