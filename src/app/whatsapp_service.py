@@ -105,8 +105,10 @@ class WhatsAppService:
     )
 
     _send_button_selectors = (
-        'button[aria-label*="Send" i]',
-        'button[aria-label*="Enviar" i]',
+        'footer button[aria-label*="Send" i][aria-disabled="false"]',
+        'footer button[aria-label*="Enviar" i][aria-disabled="false"]',
+        'button[data-tab="11"][aria-label*="Send" i][aria-disabled="false"]',
+        'button[data-tab="11"][aria-label*="Enviar" i][aria-disabled="false"]',
         'span[data-icon="send"]',
     )
 
@@ -208,50 +210,58 @@ class WhatsAppService:
         if message_box is None:
             raise MessageSendError("Campo de mensagem não encontrado")
 
-        self._fill_textbox(page, message_box, self.config.message)
+        previous_outgoing_count = self._count_outgoing_message_bubbles(
+            page,
+            self.config.message,
+        )
 
-        send_button = self._first_visible_locator(page, self._send_button_selectors, timeout_ms=3000)
+        if not self._fill_message_box(page, message_box, self.config.message):
+            current_content = self._read_textbox_content(message_box)
+            raise MessageSendError(
+                "Mensagem não foi inserida corretamente no campo de composição. "
+                f"Conteúdo atual: {current_content!r}"
+            )
+
+        send_button = self._first_visible_locator(page, self._send_button_selectors, timeout_ms=5000)
         if send_button is not None:
-            send_button.click()
+            self.logger.info("Botão Enviar encontrado. Clicando para enviar")
+            self._click_send_button(send_button)
         else:
+            self.logger.warning("Botão Enviar não encontrado. Tentando enviar com Enter")
+            message_box.click()
             page.keyboard.press("Enter")
 
-        # Aguardar a mensagem ser enviada verificando dois sinais possíveis:
-        # 1) O campo de entrada ficou vazio (texto interno sem espaços/zero-width)
-        # 2) Apareceu na conversa uma bolha com o texto exato da mensagem
-        deadline = time.monotonic() + self.config.timeout_seconds
-        escaped_message = re.escape(self.config.message)
-        exact_text = re.compile(rf"^\s*{escaped_message}\s*$", re.IGNORECASE)
+        if not self._wait_for_send_confirmation(
+            page,
+            message_box,
+            self.config.message,
+            previous_outgoing_count,
+            timeout_seconds=5,
+        ):
+            current_content = self._read_textbox_content(message_box)
+            self.logger.warning(
+                "Envio não confirmado após clique no botão. Tentando enviar novamente com Enter"
+            )
+            if current_content:
+                message_box.click()
+                page.keyboard.press("Enter")
 
-        while time.monotonic() < deadline:
-            try:
-                # Obter texto visível do campo de mensagem, removendo zero-width spaces
-                content = message_box.evaluate(
-                    "el => (el.innerText || el.textContent || '').replace(/\u200B/g, '').trim()",
-                    timeout=250,
-                )
+        if not self._wait_for_send_confirmation(
+            page,
+            message_box,
+            self.config.message,
+            previous_outgoing_count,
+            timeout_seconds=min(self.config.timeout_seconds, 10),
+        ):
+            current_content = self._read_textbox_content(message_box)
+            outgoing_count = self._count_outgoing_message_bubbles(page, self.config.message)
+            raise MessageSendError(
+                "Mensagem não foi confirmada pelo WhatsApp Web. "
+                f"Campo atual: {current_content!r}. "
+                f"Mensagens de saída antes/depois: {previous_outgoing_count}/{outgoing_count}"
+            )
 
-                if isinstance(content, str) and content == "":
-                    # Campo limpo -> provavelmente enviado
-                    break
-
-                # Verificar se a mensagem já apareceu na conversa
-                try:
-                    candidate = page.get_by_text(exact_text).first
-                    if candidate.is_visible(timeout=250):
-                        break
-                except PlaywrightError:
-                    # não encontrou ainda
-                    pass
-            except PlaywrightError:
-                # Se não conseguir avaliar, esperar mais um pouco
-                pass
-
-            page.wait_for_timeout(200)
-
-        # Pequena espera extra para garantir processamento no servidor
-        page.wait_for_timeout(1000)
-        self.logger.info("Mensagem enviada")
+        self.logger.info("Mensagem enviada e confirmada")
 
     def _find_target_result(self, page: Page, target_name: str) -> Locator | None:
         escaped_target = re.escape(target_name)
@@ -299,11 +309,238 @@ class WhatsAppService:
 
         target.click()
 
+    def _click_send_button(self, send_button: Locator) -> None:
+        try:
+            button = send_button.locator("xpath=ancestor-or-self::button[1]")
+            if button.is_visible(timeout=500):
+                button.click()
+                return
+        except PlaywrightError:
+            pass
+
+        send_button.click()
+
+    def _fill_message_box(self, page: Page, locator: Locator, value: str) -> bool:
+        attempts = (
+            ("fill", self._fill_message_with_fill),
+            ("keyboard.type", self._fill_message_with_keyboard_type),
+            ("keyboard.insert_text", self._fill_message_with_insert_text),
+            ("document.execCommand", self._fill_message_with_exec_command),
+        )
+
+        for attempt_name, attempt in attempts:
+            try:
+                self._clear_message_box(page, locator)
+                attempt(page, locator, value)
+
+                if self._wait_for_textbox_content(
+                    page,
+                    locator,
+                    value,
+                    timeout_ms=3000,
+                ):
+                    self.logger.info(
+                        "Mensagem inserida no campo de composição usando %s",
+                        attempt_name,
+                    )
+                    return True
+
+                current_content = self._read_textbox_content(locator)
+                self.logger.warning(
+                    "Tentativa de inserir mensagem com %s falhou. Conteúdo atual: %r",
+                    attempt_name,
+                    current_content,
+                )
+            except PlaywrightError as exc:
+                self.logger.warning(
+                    "Tentativa de inserir mensagem com %s falhou: %s",
+                    attempt_name,
+                    exc,
+                )
+
+        return False
+
+    def _clear_message_box(self, page: Page, locator: Locator) -> None:
+        locator.wait_for(state="visible", timeout=5000)
+        locator.scroll_into_view_if_needed(timeout=5000)
+        locator.click(timeout=5000)
+        locator.focus(timeout=5000)
+        page.keyboard.press("Control+A")
+        page.keyboard.press("Backspace")
+
+        if self._normalize_text(self._read_textbox_content(locator)) != "":
+            locator.fill("")
+
+        page.wait_for_timeout(100)
+
+    def _fill_message_with_fill(self, page: Page, locator: Locator, value: str) -> None:
+        del page
+        locator.fill(value)
+
+    def _fill_message_with_keyboard_type(
+        self,
+        page: Page,
+        locator: Locator,
+        value: str,
+    ) -> None:
+        locator.click(timeout=5000)
+        locator.focus(timeout=5000)
+        page.keyboard.type(value, delay=10)
+
+    def _fill_message_with_insert_text(
+        self,
+        page: Page,
+        locator: Locator,
+        value: str,
+    ) -> None:
+        locator.click(timeout=5000)
+        locator.focus(timeout=5000)
+        page.keyboard.insert_text(value)
+
+    def _fill_message_with_exec_command(
+        self,
+        page: Page,
+        locator: Locator,
+        value: str,
+    ) -> None:
+        del page
+        locator.evaluate(
+            """
+            (el, text) => {
+                el.focus();
+
+                const selection = window.getSelection();
+                const range = document.createRange();
+                range.selectNodeContents(el);
+                selection.removeAllRanges();
+                selection.addRange(range);
+
+                document.execCommand("insertText", false, text);
+                el.dispatchEvent(
+                    new InputEvent("input", {
+                        bubbles: true,
+                        cancelable: true,
+                        inputType: "insertText",
+                        data: text,
+                    })
+                );
+            }
+            """,
+            value,
+            timeout=5000,
+        )
+
     def _fill_textbox(self, page: Page, locator: Locator, value: str) -> None:
         locator.click()
         page.keyboard.press("Control+A")
         page.keyboard.press("Backspace")
         locator.fill(value)
+
+    def _wait_for_textbox_content(
+        self,
+        page: Page,
+        locator: Locator,
+        expected_value: str,
+        timeout_ms: int,
+    ) -> bool:
+        expected = self._normalize_text(expected_value)
+        deadline = time.monotonic() + (timeout_ms / 1000)
+
+        while time.monotonic() < deadline:
+            current = self._normalize_text(self._read_textbox_content(locator))
+            if current == expected:
+                return True
+
+            page.wait_for_timeout(200)
+
+        return False
+
+    def _wait_for_send_confirmation(
+        self,
+        page: Page,
+        message_box: Locator,
+        message: str,
+        previous_outgoing_count: int,
+        timeout_seconds: int,
+    ) -> bool:
+        deadline = time.monotonic() + timeout_seconds
+        empty_since: float | None = None
+
+        while time.monotonic() < deadline:
+            message_box_empty = self._normalize_text(self._read_textbox_content(message_box)) == ""
+            outgoing_count = self._count_outgoing_message_bubbles(page, message)
+
+            if message_box_empty and outgoing_count > previous_outgoing_count:
+                return True
+
+            if message_box_empty:
+                if empty_since is None:
+                    empty_since = time.monotonic()
+
+                if time.monotonic() - empty_since >= 1.5:
+                    self.logger.warning(
+                        "Campo de composição ficou vazio, mas a bolha de saída não foi detectada. "
+                        "Considerando envio confirmado pelo estado do campo"
+                    )
+                    return True
+            else:
+                empty_since = None
+
+            page.wait_for_timeout(300)
+
+        return False
+
+    def _read_textbox_content(self, locator: Locator) -> str:
+        try:
+            content = locator.evaluate(
+                """
+                el => {
+                    const raw = (el instanceof HTMLInputElement || el instanceof HTMLTextAreaElement)
+                        ? el.value
+                        : (el.innerText || el.textContent || "");
+                    return raw.replace(/\u200B/g, "").replace(/\u00A0/g, " ").trim();
+                }
+                """,
+                timeout=500,
+            )
+        except PlaywrightError:
+            return ""
+
+        return content if isinstance(content, str) else ""
+
+    def _count_outgoing_message_bubbles(self, page: Page, message: str) -> int:
+        message_text = self._normalize_text(message)
+        if not message_text:
+            return 0
+
+        candidates = (
+            '[data-testid="msg-container"]:has([data-testid="tail-out"])',
+            '[data-testid^="conv-msg-"]:has([data-testid="tail-out"]) [data-testid="msg-container"]',
+        )
+
+        for selector in candidates:
+            try:
+                containers = page.locator(selector)
+                total = containers.count()
+                if total == 0:
+                    continue
+
+                matches = 0
+                for index in range(total):
+                    content = containers.nth(index).inner_text(timeout=500)
+                    if message_text in self._normalize_text(content):
+                        matches += 1
+
+                return matches
+            except PlaywrightError:
+                continue
+
+        return 0
+
+    @staticmethod
+    def _normalize_text(value: str) -> str:
+        cleaned = value.replace("\u200B", "").replace("\u00A0", " ")
+        return re.sub(r"\s+", " ", cleaned).strip()
 
     def _first_visible_locator(
         self,
