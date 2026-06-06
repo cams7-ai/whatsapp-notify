@@ -1,18 +1,21 @@
-# ── IDE ──────────────────────────────────────────────────────────────────────
+# IDEs
 .idea/
 .vscode/
 
-# ── Ambiente virtual ─────────────────────────────────────────────────────────
+# Ambientes virtuais
 .venv/
 venv/
 env/
 
-# ── Variáveis de ambiente ─────────────────────────────────────────────────────
+# Variáveis de ambiente
 .env
 .env.*
 !.env.example
 
-# ── Python ───────────────────────────────────────────────────────────────────
+# Perfil persistente do navegador
+.whatsapp-profile/
+
+# Python
 __pycache__/
 *.py[cod]
 *.pyo
@@ -23,14 +26,17 @@ build/
 *.egg
 *.whl
 
-# ── Testes e cobertura ────────────────────────────────────────────────────────
+# Testes e cobertura
 .pytest_cache/
 .coverage
 .coverage.*
 htmlcov/
 coverage.xml
 
-# ── Sistema operativo ─────────────────────────────────────────────────────────
+# Sistema operacional
 .DS_Store
 Thumbs.db
 desktop.ini
+
+# Logs e arquivos temporários
+RF/whatsapp-page
