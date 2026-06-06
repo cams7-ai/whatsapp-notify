@@ -51,7 +51,7 @@ def load_config(
 
     effective_target_name = _request_value_or_required_env(
         request_value=target_name,
-        request_field="targetName",
+        request_field="contact",
         env_name="WHATSAPP_TARGET_NAME",
     )
     effective_message = _request_value_or_required_env(

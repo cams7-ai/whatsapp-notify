@@ -48,7 +48,7 @@ API_PORT=8000
 
 Variáveis:
 
-- `WHATSAPP_TARGET_NAME`: nome exato do contato individual ou grupo usado quando `targetName` não for enviado no corpo da requisição.
+- `WHATSAPP_TARGET_NAME`: nome exato do contato individual ou grupo usado quando `contact` não for enviado no corpo da requisição.
 - `WHATSAPP_MESSAGE`: mensagem usada quando `message` não for enviada no corpo da requisição.
 - `WHATSAPP_HEADLESS`: use `false` para abrir o navegador visível, recomendado no Windows e na primeira autenticação.
 - `WHATSAPP_PROFILE_DIR`: diretório do perfil persistente do Chromium.
@@ -97,12 +97,12 @@ Corpo da requisição:
 
 ```json
 {
-  "targetName": "Grupo Teste",
+  "contact": "Grupo Teste",
   "message": "Mensagem enviada pela API"
 }
 ```
 
-Os campos `targetName` e `message` são opcionais. Quando algum deles não for enviado, a API usará os valores das variáveis `WHATSAPP_TARGET_NAME` e `WHATSAPP_MESSAGE`.
+Os campos `contact` e `message` são opcionais. Quando algum deles não for enviado, a API usará os valores das variáveis `WHATSAPP_TARGET_NAME` e `WHATSAPP_MESSAGE`.
 
 Exemplo usando apenas as variáveis de ambiente:
 
@@ -115,8 +115,9 @@ Resposta de sucesso:
 ```json
 {
   "status": "enviado",
-  "mensagem": "Mensagem enviada com sucesso.",
-  "targetName": "Grupo Teste"
+  "message": "Mensagem enviada com sucesso.",
+  "contact": "Grupo Teste",
+  "elapsedTimeInSeconds": 12.345
 }
 ```
 
@@ -126,10 +127,10 @@ As respostas de erro seguem o formato:
 
 ```json
 {
-  "erro": {
-    "codigo": "DADOS_OBRIGATORIOS_AUSENTES",
-    "mensagem": "Informe 'targetName' no corpo da requisição ou configure WHATSAPP_TARGET_NAME no ambiente",
-    "campos": ["targetName"]
+  "error": {
+    "code": "DADOS_OBRIGATORIOS_AUSENTES",
+    "message": "Informe 'contact' no corpo da requisição ou configure WHATSAPP_TARGET_NAME no ambiente",
+    "fields": ["contact"]
   }
 }
 ```
@@ -142,6 +143,10 @@ Status HTTP usados:
 ## Tempo de Resposta
 
 O `POST /notifications` responde somente depois que o Playwright finaliza a tentativa de envio. Em autenticações novas, a requisição pode ficar aberta enquanto o QR Code é escaneado.
+
+A resposta de sucesso inclui `elapsedTimeInSeconds`, medido desde o início do processamento da requisição até a confirmação do envio. Esse tempo inclui a execução do Playwright e eventual espera na fila interna de envio.
+
+A API retorna sucesso depois de detectar que a mensagem saiu do campo de composição e que ela apareceu na conversa. Quando o WhatsApp Web expõe o status no DOM, a confirmação usa os estados enviado, entregue ou lido; quando esses elementos não ficam acessíveis, a confirmação usa o aumento de ocorrências visíveis do texto enviado. Se houver erro explícito ou a confirmação não ocorrer até o timeout, a API retorna erro `500`.
 
 A execução do Playwright roda fora do event loop da FastAPI para manter a API responsiva durante o uso do Chromium. Os envios são serializados por processo para evitar disputa pelo mesmo perfil persistente do navegador.
 

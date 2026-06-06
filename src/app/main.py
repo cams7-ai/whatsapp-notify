@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import asyncio
 import os
+import time
 
 import uvicorn
 from fastapi import Body, FastAPI, Request, status
@@ -25,6 +26,93 @@ from app.whatsapp_service import (
 
 logger = configure_logger()
 send_lock = asyncio.Lock()
+
+BAD_REQUEST_EXAMPLES = {
+    "invalidRequest": {
+        "summary": "Corpo inválido",
+        "value": {
+            "error": {
+                "code": "REQUISICAO_INVALIDA",
+                "message": (
+                    "Corpo da requisição inválido. Envie um JSON com os campos "
+                    "opcionais 'contact' e 'message'."
+                ),
+                "fields": ["message"],
+            }
+        },
+    },
+    "missingRequiredValue": {
+        "summary": "Campo efetivo ausente",
+        "value": {
+            "error": {
+                "code": "DADOS_OBRIGATORIOS_AUSENTES",
+                "message": (
+                    "Informe 'contact' no corpo da requisição ou configure "
+                    "WHATSAPP_TARGET_NAME no ambiente"
+                ),
+                "fields": ["contact"],
+            }
+        },
+    },
+    "contactNotFound": {
+        "summary": "Contato ou grupo não encontrado",
+        "value": {
+            "error": {
+                "code": "DESTINO_NAO_ENCONTRADO",
+                "message": "Contato ou grupo não encontrado: Grupo Teste",
+                "fields": ["contact"],
+            }
+        },
+    },
+}
+
+INTERNAL_SERVER_ERROR_EXAMPLES = {
+    "invalidConfiguration": {
+        "summary": "Configuração inválida",
+        "value": {
+            "error": {
+                "code": "CONFIGURACAO_INVALIDA",
+                "message": (
+                    "Configuração inválida do servidor: Valor inválido para "
+                    "WHATSAPP_TIMEOUT_SECONDS: informe um número inteiro"
+                ),
+            }
+        },
+    },
+    "authenticationExpired": {
+        "summary": "Timeout de autenticação",
+        "value": {
+            "error": {
+                "code": "AUTENTICACAO_EXPIRADA",
+                "message": (
+                    "Autenticação não concluída em 60 segundos. Escaneie o QR Code "
+                    "do WhatsApp Web no navegador aberto e tente novamente."
+                ),
+            }
+        },
+    },
+    "sendFailure": {
+        "summary": "Falha no envio",
+        "value": {
+            "error": {
+                "code": "FALHA_NO_ENVIO",
+                "message": (
+                    "Não foi possível confirmar o envio da mensagem: Mensagem não "
+                    "foi confirmada pelo WhatsApp Web."
+                ),
+            }
+        },
+    },
+    "internalError": {
+        "summary": "Erro inesperado",
+        "value": {
+            "error": {
+                "code": "ERRO_INTERNO",
+                "message": "Erro inesperado ao processar a requisição.",
+            }
+        },
+    },
+}
 
 OPENAPI_TAGS = [
     {
@@ -56,11 +144,10 @@ class NotificationRequest(BaseModel):
 
     model_config = ConfigDict(
         extra="forbid",
-        populate_by_name=True,
         json_schema_extra={
             "examples": [
                 {
-                    "targetName": "Grupo Teste",
+                    "contact": "Grupo Teste",
                     "message": "Mensagem enviada pela API",
                 },
                 {},
@@ -70,7 +157,7 @@ class NotificationRequest(BaseModel):
 
     target_name: str | None = Field(
         default=None,
-        alias="targetName",
+        alias="contact",
         description="Nome exato do contato individual ou grupo.",
     )
     message: str | None = Field(
@@ -86,22 +173,27 @@ class NotificationResponse(BaseModel):
             "examples": [
                 {
                     "status": "enviado",
-                    "mensagem": "Mensagem enviada com sucesso.",
-                    "targetName": "Grupo Teste",
+                    "message": "Mensagem enviada com sucesso.",
+                    "contact": "Grupo Teste",
+                    "elapsedTimeInSeconds": 12.345,
                 }
             ]
         },
     )
 
     status: str
-    mensagem: str
-    target_name: str = Field(alias="targetName")
+    message: str
+    target_name: str = Field(alias="contact")
+    elapsed_seconds: float = Field(
+        alias="elapsedTimeInSeconds",
+        description="Tempo total decorrido, em segundos, até confirmar o envio.",
+    )
 
 
 class ErrorDetail(BaseModel):
-    codigo: str
-    mensagem: str
-    campos: list[str] | None = None
+    code: str
+    message: str
+    fields: list[str] | None = None
 
 
 class ErrorResponse(BaseModel):
@@ -109,20 +201,20 @@ class ErrorResponse(BaseModel):
         json_schema_extra={
             "examples": [
                 {
-                    "erro": {
-                        "codigo": "DADOS_OBRIGATORIOS_AUSENTES",
-                        "mensagem": (
-                            "Informe 'targetName' no corpo da requisição ou configure "
+                    "error": {
+                        "code": "DADOS_OBRIGATORIOS_AUSENTES",
+                        "message": (
+                            "Informe 'contact' no corpo da requisição ou configure "
                             "WHATSAPP_TARGET_NAME no ambiente"
                         ),
-                        "campos": ["targetName"],
+                        "fields": ["contact"],
                     }
                 }
             ]
         }
     )
 
-    erro: ErrorDetail
+    error: ErrorDetail
 
 
 class ApiError(Exception):
@@ -143,13 +235,13 @@ class ApiError(Exception):
 @app.exception_handler(ApiError)
 async def api_error_handler(_: Request, exc: ApiError) -> JSONResponse:
     error: dict[str, str | list[str]] = {
-        "codigo": exc.code,
-        "mensagem": exc.message,
+        "code": exc.code,
+        "message": exc.message,
     }
     if exc.fields:
-        error["campos"] = exc.fields
+        error["fields"] = exc.fields
 
-    return JSONResponse(status_code=exc.status_code, content={"erro": error})
+    return JSONResponse(status_code=exc.status_code, content={"error": error})
 
 
 @app.exception_handler(RequestValidationError)
@@ -161,13 +253,13 @@ async def request_validation_error_handler(
     return JSONResponse(
         status_code=status.HTTP_400_BAD_REQUEST,
         content={
-            "erro": {
-                "codigo": "REQUISICAO_INVALIDA",
-                "mensagem": (
+            "error": {
+                "code": "REQUISICAO_INVALIDA",
+                "message": (
                     "Corpo da requisição inválido. Envie um JSON com os campos "
-                    "opcionais 'targetName' e 'message'."
+                    "opcionais 'contact' e 'message'."
                 ),
-                "campos": fields,
+                "fields": fields,
             }
         },
     )
@@ -189,20 +281,37 @@ async def health() -> dict[str, str]:
     response_model=NotificationResponse,
     summary="Enviar mensagem pelo WhatsApp",
     description=(
-        "Envia uma mensagem pelo WhatsApp Web. `targetName` e `message` são opcionais; "
+        "Envia uma mensagem pelo WhatsApp Web. `contact` e `message` são opcionais; "
         "quando não forem enviados, a API usa `WHATSAPP_TARGET_NAME` e "
         "`WHATSAPP_MESSAGE`."
     ),
     operation_id="sendWhatsAppNotification",
     responses={
-        400: {"model": ErrorResponse, "description": "Erro de requisição"},
-        500: {"model": ErrorResponse, "description": "Erro interno ou de automação"},
+        400: {
+            "model": ErrorResponse,
+            "description": "Erro de requisição",
+            "content": {
+                "application/json": {
+                    "examples": BAD_REQUEST_EXAMPLES,
+                }
+            },
+        },
+        500: {
+            "model": ErrorResponse,
+            "description": "Erro interno ou de automação",
+            "content": {
+                "application/json": {
+                    "examples": INTERNAL_SERVER_ERROR_EXAMPLES,
+                }
+            },
+        },
     },
     tags=["notifications"],
 )
 async def send_notification(
     payload: NotificationRequest | None = Body(default=None),
 ) -> NotificationResponse:
+    started_at = time.perf_counter()
     request_payload = payload or NotificationRequest()
 
     try:
@@ -234,7 +343,7 @@ async def send_notification(
             status_code=status.HTTP_400_BAD_REQUEST,
             code="DESTINO_NAO_ENCONTRADO",
             message=str(exc),
-            fields=["targetName"],
+            fields=["contact"],
         ) from exc
     except AuthenticationTimeoutError as exc:
         raise ApiError(
@@ -267,8 +376,9 @@ async def send_notification(
 
     return NotificationResponse(
         status="enviado",
-        mensagem="Mensagem enviada com sucesso.",
-        targetName=config.target_name,
+        message="Mensagem enviada com sucesso.",
+        contact=config.target_name,
+        elapsedTimeInSeconds=round(time.perf_counter() - started_at, 3),
     )
 
 
