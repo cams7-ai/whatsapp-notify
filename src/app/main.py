@@ -17,12 +17,14 @@ from starlette.exceptions import HTTPException as StarletteHTTPException
 
 from app.config import AppConfig, ConfigError, MissingRequiredValueError, load_config
 from app.logger import configure_logger
-from app.whatsapp_service import (
-    AuthenticationTimeoutError,
-    MessageSendError,
+from app.repositories import NotificationRepository, PlaywrightNotificationRepository
+from app.services import NotificationService
+from app.domain import (
+    AuthenticationError,
+    DomainError,
+    NotificationError,
+    SendError,
     TargetNotFoundError,
-    WhatsAppNotifyError,
-    WhatsAppService,
 )
 
 
@@ -383,7 +385,7 @@ async def send_notification(
             message=str(exc),
             fields=["contact"],
         ) from exc
-    except AuthenticationTimeoutError as exc:
+    except AuthenticationError as exc:
         raise ApiError(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
             code="AUTENTICACAO_EXPIRADA",
@@ -392,13 +394,13 @@ async def send_notification(
                 "e tente novamente."
             ),
         ) from exc
-    except MessageSendError as exc:
+    except SendError as exc:
         raise ApiError(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
             code="FALHA_NO_ENVIO",
             message=f"Não foi possível confirmar o envio da mensagem: {exc}",
         ) from exc
-    except WhatsAppNotifyError as exc:
+    except DomainError as exc:
         raise ApiError(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
             code="FALHA_NA_AUTOMACAO",
@@ -421,8 +423,18 @@ async def send_notification(
 
 
 def _send_message(config: AppConfig) -> None:
-    service = WhatsAppService(config=config, logger=logger)
-    service.run()
+    # Injeção de dependência manual (pode ser substituída por dependency-injector)
+    repository: NotificationRepository = PlaywrightNotificationRepository(
+        config=config,
+        logger=logger,
+    )
+    service = NotificationService(repository=repository, logger=logger)
+
+    # Delegação ao serviço
+    service.send(
+        target_name=config.target_name,
+        message=config.message,
+    )
 
 
 def _http_error_code_and_message(exc: StarletteHTTPException) -> tuple[str, str]:

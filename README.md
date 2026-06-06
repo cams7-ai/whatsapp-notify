@@ -4,6 +4,30 @@ API REST em Python 3.12 para enviar mensagens pelo WhatsApp Web usando FastAPI e
 
 O projeto usa um perfil persistente do Chromium para reutilizar a sessão autenticada. Na primeira execução, ou quando a sessão expirar, será necessário escanear o QR Code do WhatsApp Web.
 
+## Arquitetura
+
+Este projeto segue **Clean Architecture** com separação clara de camadas, aplicando **SOLID**, **Repository Pattern**, **Service Layer**, **Dependency Injection** e **Page Object Model (POM)**.
+
+Veja [ARCHITECTURE.md](./ARCHITECTURE.md) para detalhes completos da estrutura.
+
+### Estrutura de Camadas
+
+```
+Presentation    (FastAPI endpoints)  → main.py
+    ↓
+Application     (Service Layer)      → services/
+    ↓
+Domain          (Modelos & exceções) → domain/
+    ↓
+Infrastructure  (Repositório & POMs) → repositories/, pages/
+```
+
+Benefícios:
+- **Testável**: Dependências são injetadas; fácil mockar repositório
+- **Extensível**: Adicione novo repositório (ex: Twilio) sem alterar serviço
+- **Manutenível**: Seletores de UI centralizados em POMs
+- **Independente**: Lógica de negócio isolada de frameworks
+
 ## Instalação
 
 ### Criar ambiente virtual
@@ -67,6 +91,16 @@ Também é possível usar o comando instalado:
 ```bash
 whatsapp-notify
 ```
+
+## Testes
+
+Testes unitários (não requerem Playwright):
+
+```bash
+pytest tests/ -v
+```
+
+Exemplos de teste em `tests/test_services.py` demonstram como a arquitetura Clean facilita testes isolados.
 
 ## Documentação da API
 
