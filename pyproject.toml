@@ -5,12 +5,14 @@ build-backend = "setuptools.build_meta"
 [project]
 name = "whatsapp-notify"
 version = "0.1.0"
-description = "Aplicação CLI para enviar mensagens pelo WhatsApp Web usando Playwright."
+description = "API REST para enviar mensagens pelo WhatsApp Web usando Playwright."
 readme = "README.md"
 requires-python = ">=3.12"
 dependencies = [
+    "fastapi>=0.111.0",
     "playwright>=1.44.0",
     "python-dotenv>=1.0.1",
+    "uvicorn>=0.30.0",
 ]
 
 [project.scripts]

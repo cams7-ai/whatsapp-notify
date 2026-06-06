@@ -13,6 +13,17 @@ class ConfigError(RuntimeError):
     """Erro gerado quando uma configuração obrigatória está ausente ou inválida."""
 
 
+class MissingRequiredValueError(ConfigError):
+    """Erro gerado quando a requisição e o ambiente não fornecem um valor obrigatório."""
+
+    def __init__(self, request_field: str, env_name: str) -> None:
+        self.request_field = request_field
+        self.env_name = env_name
+        super().__init__(
+            f"Informe '{request_field}' no corpo da requisição ou configure {env_name} no ambiente"
+        )
+
+
 @dataclass(frozen=True)
 class AppConfig:
     target_name: str
@@ -22,8 +33,13 @@ class AppConfig:
     timeout_seconds: int
 
 
-def load_config(env_file: Path | None = None) -> AppConfig:
-    """Carrega o arquivo .env e processa as variáveis de ambiente."""
+def load_config(
+    env_file: Path | None = None,
+    *,
+    target_name: str | None = None,
+    message: str | None = None,
+) -> AppConfig:
+    """Carrega o .env e combina valores da requisição com variáveis de ambiente."""
 
     env_path = env_file or Path.cwd() / ".env"
     base_dir = env_path.parent if env_path.exists() else Path.cwd()
@@ -33,26 +49,44 @@ def load_config(env_file: Path | None = None) -> AppConfig:
     else:
         load_dotenv()
 
-    target_name = _required_env("WHATSAPP_TARGET_NAME")
-    message = _required_env("WHATSAPP_MESSAGE")
+    effective_target_name = _request_value_or_required_env(
+        request_value=target_name,
+        request_field="targetName",
+        env_name="WHATSAPP_TARGET_NAME",
+    )
+    effective_message = _request_value_or_required_env(
+        request_value=message,
+        request_field="message",
+        env_name="WHATSAPP_MESSAGE",
+    )
     headless = _parse_bool("WHATSAPP_HEADLESS", default=False)
     profile_dir = _parse_profile_dir("WHATSAPP_PROFILE_DIR", base_dir)
     timeout_seconds = _parse_positive_int("WHATSAPP_TIMEOUT_SECONDS", default=60)
 
     return AppConfig(
-        target_name=target_name,
-        message=message,
+        target_name=effective_target_name,
+        message=effective_message,
         headless=headless,
         profile_dir=profile_dir,
         timeout_seconds=timeout_seconds,
     )
 
 
-def _required_env(name: str) -> str:
-    value = os.getenv(name)
-    if value is None or not value.strip():
-        raise ConfigError(f"Variável obrigatória ausente: {name}")
-    return value.strip()
+def _request_value_or_required_env(
+    *,
+    request_value: str | None,
+    request_field: str,
+    env_name: str,
+) -> str:
+    normalized_request_value = _normalize_optional_text(request_value)
+    if normalized_request_value is not None:
+        return normalized_request_value
+
+    env_value = _normalize_optional_text(os.getenv(env_name))
+    if env_value is None:
+        raise MissingRequiredValueError(request_field=request_field, env_name=env_name)
+
+    return env_value
 
 
 def _parse_bool(name: str, default: bool) -> bool:
@@ -95,3 +129,11 @@ def _parse_positive_int(name: str, default: int) -> int:
         raise ConfigError(f"Valor inválido para {name}: informe um número maior que zero")
 
     return parsed
+
+
+def _normalize_optional_text(value: str | None) -> str | None:
+    if value is None:
+        return None
+
+    normalized = value.strip()
+    return normalized or None
