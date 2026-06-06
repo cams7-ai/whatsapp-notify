@@ -182,17 +182,74 @@ class WhatsAppService:
                 viewport = ViewportSize(width=1280, height=900)
 
             self.logger.info("Inicializando Chromium com perfil persistente")
+            # Ajuste de flags para reduzir sinais óbvios de automação quando
+            # executando em headless. Mantemos comportamento original em modo
+            # visível.
+            launch_args: list[str]
+            if self.config.headless:
+                launch_args = [
+                    "--disable-infobars",
+                    "--disable-blink-features=AutomationControlled",
+                    "--no-sandbox",
+                    "--disable-setuid-sandbox",
+                    "--disable-dev-shm-usage",
+                    "--window-size=1280,900",
+                ]
+            else:
+                launch_args = ["--start-maximized"]
+
+            # Define user agent and locale to make headless context behave
+            # more like a normal browser session. These values aren't used
+            # when running in headful mode by default, but setting them in
+            # headless can help avoid detection differences.
+            user_agent = (
+                "Mozilla/5.0 (Windows NT 10.0; Win64; x64) "
+                "AppleWebKit/537.36 (KHTML, like Gecko) "
+                "Chrome/122.0.0.0 Safari/537.36"
+            )
+            locale = "pt-BR"
+
             context = playwright.chromium.launch_persistent_context(
                 user_data_dir=str(self.config.profile_dir),
                 headless=self.config.headless,
                 viewport=viewport,
-                args=[] if self.config.headless else ["--start-maximized"],
+                args=launch_args,
+                user_agent=user_agent,
+                locale=locale,
             )
+            # Injeta um script de inicialização para minimizar sinais de
+            # automação (navigator.webdriver etc.). Nem sempre é possível
+            # injetar (depende da versão), então protegemos com try/except.
+            try:
+                context.add_init_script(
+                    """
+                    try {
+                        Object.defineProperty(navigator, 'webdriver', { get: () => undefined });
+                        window.chrome = window.chrome || {};
+                        Object.defineProperty(navigator, 'language', { get: () => 'en-US' });
+                    } catch (e) {
+                        // ignore
+                    }
+                    """
+                )
+            except Exception:
+                self.logger.debug("Não foi possível injetar init script no contexto")
             context.set_default_timeout(self.timeout_ms)
 
             try:
                 page = context.pages[0] if context.pages else context.new_page()
                 self._open_whatsapp_web(page)
+                # Pequeno delay para garantir que dados de sessão e scripts do
+                # profile foram carregados antes de coletarmos diagnósticos.
+                page.wait_for_timeout(1000)
+                # Capture metadata da página para diagnóstico (userAgent,
+                # webdriver, url, title, cookies count). Isso ajuda a entender
+                # diferenças entre headful e headless quando a sessão não é
+                # corretamente reaplicada.
+                try:
+                    self._capture_page_metadata(page)
+                except Exception:
+                    self.logger.exception("Falha ao capturar metadata da página")
                 self._wait_for_authentication(page)
                 self._open_target_conversation(page)
                 self._send_configured_message(page)
@@ -222,7 +279,48 @@ class WhatsAppService:
                 self.logger.info("QR Code exibido. Escaneie pelo WhatsApp no celular")
                 qr_logged = True
 
+                # Em headless, tentamos capturar o QR Code em arquivo para que
+                # o usuário possa escaneá-lo externamente.
+                if self.config.headless:
+                    try:
+                        qr_locator = self._first_visible_locator(page, self._qr_code_selectors, timeout_ms=500)
+                        if qr_locator is not None:
+                            qr_path = self.config.profile_dir / "whatsapp_qr.png"
+                            qr_locator.screenshot(path=str(qr_path))
+                            self.logger.info("QR Code capturado em %s — escaneie com o WhatsApp no celular", qr_path)
+                    except Exception:
+                        self.logger.exception("Falha ao capturar QR Code em headless")
+
             page.wait_for_timeout(1000)
+
+        # Antes de lançar a exceção, capturamos artefatos para diagnóstico
+        # (screenshot e HTML) para entender o que o WhatsApp Web exibiu em
+        # headless e facilitar correções.
+        try:
+            failure_png = self.config.profile_dir / "last_headless_failure.png"
+            failure_html = self.config.profile_dir / "last_headless_failure.html"
+            try:
+                page.screenshot(path=str(failure_png), full_page=True)
+            except Exception:
+                # fallback: screenshot sem full_page
+                try:
+                    page.screenshot(path=str(failure_png))
+                except Exception:
+                    self.logger.exception("Falha ao capturar screenshot da página")
+
+            try:
+                with open(failure_html, "w", encoding="utf-8") as f:
+                    f.write(page.content())
+            except Exception:
+                self.logger.exception("Falha ao gravar HTML da página para diagnóstico")
+
+            self.logger.error(
+                "Autenticação falhou — salvo screenshot em %s e HTML em %s",
+                failure_png,
+                failure_html,
+            )
+        except Exception:
+            self.logger.exception("Erro ao criar artefatos de diagnóstico de autenticação")
 
         raise AuthenticationTimeoutError(
             f"Autenticação não concluída em {self.config.timeout_seconds} segundos"
@@ -855,6 +953,58 @@ class WhatsAppService:
             page.wait_for_timeout(250)
 
         return None
+
+    def _capture_page_metadata(self, page: Page) -> None:
+        """Grava metadados úteis da página para diagnóstico.
+
+        Gera um arquivo `page_debug.txt` dentro do `profile_dir` com:
+        - url atual
+        - title
+        - navigator.userAgent
+        - navigator.webdriver
+        - número de cookies
+        """
+        try:
+            info = page.evaluate(
+                """
+                () => {
+                    return {
+                        url: window.location.href,
+                        title: document.title,
+                        userAgent: navigator.userAgent,
+                        webdriver: navigator.webdriver === undefined ? 'undefined' : navigator.webdriver,
+                        language: navigator.language || null,
+                    };
+                }
+                """
+            )
+        except Exception:
+            info = {
+                "url": "<failed to eval>",
+                "title": "<failed to eval>",
+                "userAgent": "<failed to eval>",
+                "webdriver": "<failed to eval>",
+                "language": "<failed to eval>",
+            }
+
+        try:
+            cookies = page.context.cookies()
+            cookies_count = len(cookies)
+        except Exception:
+            cookies_count = -1
+
+        debug_path = self.config.profile_dir / "page_debug.txt"
+        try:
+            with open(debug_path, "w", encoding="utf-8") as f:
+                f.write(f"url: {info.get('url')}\n")
+                f.write(f"title: {info.get('title')}\n")
+                f.write(f"userAgent: {info.get('userAgent')}\n")
+                f.write(f"webdriver: {info.get('webdriver')}\n")
+                f.write(f"language: {info.get('language')}\n")
+                f.write(f"cookies_count: {cookies_count}\n")
+            self.logger.info("Metadados da página gravados em %s", debug_path)
+        except Exception:
+            self.logger.exception("Falha ao gravar metadados da página")
 
     def _is_any_selector_visible(
         self,
