@@ -138,7 +138,11 @@ As respostas de erro seguem o formato:
 Status HTTP usados:
 
 - `400`: corpo inválido, campos efetivos ausentes ou contato/grupo não encontrado.
+- `404`: rota não encontrada.
+- `405`: método HTTP não permitido para a rota.
 - `500`: configuração inválida do servidor, timeout de autenticação, falha na automação do Chromium ou erro inesperado.
+
+A API não expõe respostas `422`. Erros de validação do FastAPI são convertidos para `400` e seguem o mesmo formato `error` usado nos demais erros da aplicação.
 
 ## Tempo de Resposta
 
