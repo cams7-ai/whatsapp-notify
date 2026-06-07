@@ -1,7 +1,6 @@
-import pytest
 import logging
 
-from app.pages import LoginPage, SidebarPage, ConversationPage
+from pages import LoginPage, SidebarPage, ConversationPage
 
 
 class FakeLocator:

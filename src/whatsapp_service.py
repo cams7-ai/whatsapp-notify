@@ -10,7 +10,7 @@ from pathlib import Path
 from playwright.sync_api import Error as PlaywrightError
 from playwright.sync_api import Locator, Page, ViewportSize, sync_playwright
 
-from app.config import AppConfig
+from config import AppConfig
 
 
 WHATSAPP_WEB_URL = "https://web.whatsapp.com"

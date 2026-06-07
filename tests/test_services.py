@@ -6,8 +6,8 @@ Demonstra como a arquitetura Clean + DI facilita testes isolados.
 import pytest
 from unittest.mock import Mock
 
-from app.services import NotificationService
-from app.domain import (
+from services import NotificationService
+from domain import (
     Notification,
     AuthenticationError,
     TargetNotFoundError,

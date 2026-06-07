@@ -83,7 +83,7 @@ Variáveis:
 ## Execução
 
 ```bash
-python -m app.main
+python -m main
 ```
 
 Também é possível usar o comando instalado:

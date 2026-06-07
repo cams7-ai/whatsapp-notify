@@ -1,12 +1,9 @@
 import pytest
-from types import SimpleNamespace
-from pathlib import Path
 import logging
 
-from app.repositories import PlaywrightNotificationRepository
-from app.config import AppConfig
-from app import repositories
-from app import domain
+from repositories import PlaywrightNotificationRepository
+from config import AppConfig
+import domain
 
 
 def test_playwright_repository_maps_authentication_error(monkeypatch, tmp_path):
@@ -20,8 +17,8 @@ def test_playwright_repository_maps_authentication_error(monkeypatch, tmp_path):
     )
     logger = logging.getLogger("test")
 
-    # Monkeypatch WhatsAppService and exception names in app.whatsapp_service
-    import app.whatsapp_service as ws_mod
+    # Monkeypatch WhatsAppService and exception names in whatsapp_service
+    import whatsapp_service as ws_mod
 
     class DummyAuthExc(Exception):
         pass
@@ -62,7 +59,7 @@ def test_playwright_repository_maps_target_not_found(monkeypatch, tmp_path):
     )
     logger = logging.getLogger("test")
 
-    import app.whatsapp_service as ws_mod
+    import whatsapp_service as ws_mod
 
     monkeypatch.setattr(ws_mod, 'WhatsAppService', Service2)
     monkeypatch.setattr(ws_mod, 'TargetNotFoundError', Exception)

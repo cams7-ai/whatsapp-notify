@@ -30,12 +30,11 @@ A aplicação deve enviar mensagens pelo WhatsApp Web utilizando Playwright, per
 ```text
 whatsapp-notify/
 ├── src/
-│   └── app/
-│       ├── __init__.py
-│       ├── main.py
-│       ├── config.py
-│       ├── logger.py
-│       └── whatsapp_service.py
+│   ├── __init__.py
+│   ├── main.py
+│   ├── config.py
+│   ├── logger.py
+│   └── whatsapp_service.py
 ├── .env.example
 ├── .gitignore
 ├── pyproject.toml
@@ -90,7 +89,7 @@ WHATSAPP_TIMEOUT_SECONDS=60
 - O projeto deve ser executável com:
 
 ```bash
-python -m app.main
+python -m main
 ```
 
 ---
@@ -146,7 +145,7 @@ WHATSAPP_TIMEOUT_SECONDS=60
 ## Execução
 
 ```powershell
-python -m app.main
+python -m main
 ```
 
 ---

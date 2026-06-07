@@ -9,8 +9,8 @@ from __future__ import annotations
 
 import logging
 
-from app.domain import Notification, DomainError
-from app.repositories import NotificationRepository
+from domain import Notification, DomainError
+from repositories import NotificationRepository
 
 
 class NotificationService:

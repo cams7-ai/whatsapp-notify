@@ -202,17 +202,18 @@ Benefício: Seletores centralizados por página; fácil manutenção quando What
 
 ```python
 from unittest.mock import Mock
-from app.services import NotificationService
-from app.domain import TargetNotFoundError
+from services import NotificationService
+from domain import TargetNotFoundError
+
 
 def test_send_notifies_when_target_not_found():
     repo = Mock()
     repo.send.side_effect = TargetNotFoundError("Not found")
     service = NotificationService(repo, logger)
-    
+
     with pytest.raises(TargetNotFoundError):
         service.send("Unknown", "Test")
-    
+
     repo.send.assert_called_once_with("Unknown", "Test")
 ```
 

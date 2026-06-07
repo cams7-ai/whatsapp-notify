@@ -15,14 +15,13 @@ from fastapi.responses import JSONResponse
 from pydantic import BaseModel, ConfigDict, Field
 from starlette.exceptions import HTTPException as StarletteHTTPException
 
-from app.config import AppConfig, ConfigError, MissingRequiredValueError, load_config
-from app.logger import configure_logger
-from app.repositories import NotificationRepository, PlaywrightNotificationRepository
-from app.services import NotificationService
-from app.domain import (
+from config import AppConfig, ConfigError, MissingRequiredValueError, load_config
+from logger import configure_logger
+from repositories import NotificationRepository, PlaywrightNotificationRepository
+from services import NotificationService
+from domain import (
     AuthenticationError,
     DomainError,
-    NotificationError,
     SendError,
     TargetNotFoundError,
 )
@@ -119,10 +118,6 @@ INTERNAL_SERVER_ERROR_EXAMPLES = {
 }
 
 OPENAPI_TAGS = [
-    {
-        "name": "health",
-        "description": "Verificação simples de disponibilidade da API.",
-    },
     {
         "name": "notifications",
         "description": (
@@ -303,17 +298,6 @@ async def unhandled_exception_handler(_: Request, exc: Exception) -> JSONRespons
         code="ERRO_INTERNO",
         message="Erro inesperado ao processar a requisi??o.",
     )
-
-
-@app.get(
-    "/health",
-    summary="Verificar disponibilidade",
-    description="Retorna `status: ok` quando a API está disponível.",
-    operation_id="healthCheck",
-    tags=["health"],
-)
-async def health() -> dict[str, str]:
-    return {"status": "ok"}
 
 
 @app.post(
@@ -500,7 +484,7 @@ app.openapi = custom_openapi
 def main() -> None:
     host = os.getenv("API_HOST", "0.0.0.0")
     port = int(os.getenv("API_PORT", "8000"))
-    uvicorn.run("app.main:app", host=host, port=port, reload=False)
+    uvicorn.run("main:app", host=host, port=port, reload=False)
 
 
 if __name__ == "__main__":

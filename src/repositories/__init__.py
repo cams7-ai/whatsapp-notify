@@ -9,7 +9,7 @@ from __future__ import annotations
 from abc import ABC, abstractmethod
 import logging
 
-from app.config import AppConfig
+from config import AppConfig
 
 
 class NotificationRepository(ABC):
@@ -44,14 +44,14 @@ class PlaywrightNotificationRepository(NotificationRepository):
     def send(self, target_name: str, message: str) -> None:
         """Envia mensagem via WhatsApp Web + Playwright."""
         # Import aqui para evitar circular dependency
-        from app.whatsapp_service import WhatsAppService
-        from app.whatsapp_service import (
+        from whatsapp_service import WhatsAppService
+        from whatsapp_service import (
             AuthenticationTimeoutError,
             MessageSendError,
             TargetNotFoundError as PlaywrightTargetNotFoundError,
             WhatsAppNotifyError,
         )
-        from app.domain import (
+        from domain import (
             AuthenticationError,
             TargetNotFoundError,
             SendError,

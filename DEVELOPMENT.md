@@ -41,14 +41,15 @@ Exemplo:
 ```python
 import pytest
 from unittest.mock import Mock
-from app.services import NotificationService
+from services import NotificationService
+
 
 def test_service_sends_notification(self):
     mock_repo = Mock()
     service = NotificationService(mock_repo, Mock())
-    
+
     service.send("Grupo", "Olá")
-    
+
     mock_repo.send.assert_called_once_with("Grupo", "Olá")
 ```
 
@@ -59,13 +60,14 @@ def test_service_sends_notification(self):
 1. Crie `src/app/repositories/twilio_repository.py`:
 
 ```python
-from app.repositories import NotificationRepository
+from repositories import NotificationRepository
+
 
 class TwilioNotificationRepository(NotificationRepository):
     def __init__(self, config, logger):
         self.config = config
         self.logger = logger
-    
+
     def send(self, target_name: str, message: str) -> None:
         # Lógica Twilio aqui
         pass
@@ -90,8 +92,8 @@ def _send_message(config: AppConfig) -> None:
 
 ```python
 def test_twilio_repository_sends():
-    from app.repositories.twilio_repository import TwilioNotificationRepository
-    
+    from src import TwilioNotificationRepository
+
     repo = TwilioNotificationRepository(config, logger)
     # Não lança erro
     repo.send("Grupo", "Olá")
@@ -113,7 +115,7 @@ class NewPage(BasePage):
 2. Use em `WhatsAppService` quando necessário:
 
 ```python
-from app.pages import NewPage
+from pages import NewPage
 
 # Em WhatsAppService.run()
 new_page = NewPage(page, self.logger)
@@ -134,7 +136,7 @@ class MyModel:
 2. Use em services ou validação:
 
 ```python
-from app.domain import MyModel
+from domain import MyModel
 
 model = MyModel(field1="value", field2=123)
 ```
@@ -172,7 +174,8 @@ except MyCustomError as exc:
 O logger está disponível em toda aplicação:
 
 ```python
-from app.logger import configure_logger
+from logger import configure_logger
+
 logger = configure_logger()
 
 logger.info("Mensagem informativa")

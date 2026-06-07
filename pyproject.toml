@@ -22,7 +22,7 @@ dev = [
 ]
 
 [project.scripts]
-whatsapp-notify = "app.main:main"
+whatsapp-notify = "main:main"
 
 [tool.setuptools.packages.find]
 where = ["src"]
