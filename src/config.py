@@ -1,4 +1,4 @@
-"""Carregamento e validação das configurações do WhatsApp Notify."""
+﻿"""Carregamento e validacao das configuracoes do WhatsApp Notify."""
 
 from __future__ import annotations
 
@@ -10,17 +10,17 @@ from dotenv import load_dotenv
 
 
 class ConfigError(RuntimeError):
-    """Erro gerado quando uma configuração obrigatória está ausente ou inválida."""
+    """Erro gerado quando uma configuracao obrigatoria esta ausente ou invalida."""
 
 
 class MissingRequiredValueError(ConfigError):
-    """Erro gerado quando a requisição e o ambiente não fornecem um valor obrigatório."""
+    """Erro gerado quando a requisicao e o ambiente nao fornecem um valor obrigatorio."""
 
     def __init__(self, request_field: str, env_name: str) -> None:
         self.request_field = request_field
         self.env_name = env_name
         super().__init__(
-            f"Informe '{request_field}' no corpo da requisição ou configure {env_name} no ambiente"
+            f"Informe '{request_field}' no corpo da requisicao ou configure {env_name} no ambiente"
         )
 
 
@@ -38,9 +38,46 @@ def load_config(
     *,
     target_name: str | None = None,
     message: str | None = None,
+    headless: bool | None = None,
 ) -> AppConfig:
-    """Carrega o .env e combina valores da requisição com variáveis de ambiente."""
+    """Carrega configuracoes para um fluxo de envio de mensagem."""
 
+    _, base_dir = _load_environment(env_file)
+    return AppConfig(
+        target_name=_request_value_or_required_env(
+            request_value=target_name,
+            request_field="contact",
+            env_name="WHATSAPP_TARGET_NAME",
+        ),
+        message=_request_value_or_required_env(
+            request_value=message,
+            request_field="message",
+            env_name="WHATSAPP_MESSAGE",
+        ),
+        headless=headless if headless is not None else _parse_bool("WHATSAPP_HEADLESS", default=False),
+        profile_dir=_parse_profile_dir("WHATSAPP_PROFILE_DIR", base_dir),
+        timeout_seconds=_parse_positive_int("WHATSAPP_TIMEOUT_SECONDS", default=60),
+    )
+
+
+def load_session_config(
+    env_file: Path | None = None,
+    *,
+    headless: bool | None = None,
+) -> AppConfig:
+    """Carrega configuracoes para abrir uma sessao sem exigir contato ou mensagem."""
+
+    _, base_dir = _load_environment(env_file)
+    return AppConfig(
+        target_name="",
+        message="",
+        headless=headless if headless is not None else _parse_bool("WHATSAPP_HEADLESS", default=False),
+        profile_dir=_parse_profile_dir("WHATSAPP_PROFILE_DIR", base_dir),
+        timeout_seconds=_parse_positive_int("WHATSAPP_TIMEOUT_SECONDS", default=60),
+    )
+
+
+def _load_environment(env_file: Path | None) -> tuple[Path, Path]:
     env_path = env_file or Path.cwd() / ".env"
     base_dir = env_path.parent if env_path.exists() else Path.cwd()
 
@@ -49,27 +86,7 @@ def load_config(
     else:
         load_dotenv()
 
-    effective_target_name = _request_value_or_required_env(
-        request_value=target_name,
-        request_field="contact",
-        env_name="WHATSAPP_TARGET_NAME",
-    )
-    effective_message = _request_value_or_required_env(
-        request_value=message,
-        request_field="message",
-        env_name="WHATSAPP_MESSAGE",
-    )
-    headless = _parse_bool("WHATSAPP_HEADLESS", default=False)
-    profile_dir = _parse_profile_dir("WHATSAPP_PROFILE_DIR", base_dir)
-    timeout_seconds = _parse_positive_int("WHATSAPP_TIMEOUT_SECONDS", default=60)
-
-    return AppConfig(
-        target_name=effective_target_name,
-        message=effective_message,
-        headless=headless,
-        profile_dir=profile_dir,
-        timeout_seconds=timeout_seconds,
-    )
+    return env_path, base_dir
 
 
 def _request_value_or_required_env(
@@ -101,7 +118,7 @@ def _parse_bool(name: str, default: bool) -> bool:
         return False
 
     raise ConfigError(
-        f"Valor inválido para {name}: use true/false, yes/no, sim/não ou 1/0"
+        f"Valor invalido para {name}: use true/false, yes/no, sim/nao ou 1/0"
     )
 
 
@@ -123,10 +140,10 @@ def _parse_positive_int(name: str, default: int) -> int:
     try:
         parsed = int(value.strip())
     except ValueError as exc:
-        raise ConfigError(f"Valor inválido para {name}: informe um número inteiro") from exc
+        raise ConfigError(f"Valor invalido para {name}: informe um numero inteiro") from exc
 
     if parsed <= 0:
-        raise ConfigError(f"Valor inválido para {name}: informe um número maior que zero")
+        raise ConfigError(f"Valor invalido para {name}: informe um numero maior que zero")
 
     return parsed
 

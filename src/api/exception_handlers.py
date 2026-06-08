@@ -1,4 +1,4 @@
-"""Tratamento centralizado de erros HTTP."""
+﻿"""Tratamento centralizado de erros HTTP."""
 
 from __future__ import annotations
 
@@ -31,8 +31,8 @@ async def request_validation_error_handler(
         status_code=status.HTTP_400_BAD_REQUEST,
         code="REQUISICAO_INVALIDA",
         message=(
-            "Corpo da requisição inválido. Envie um JSON com os campos "
-            "opcionais 'contact' e 'message'."
+            "Corpo da requisicao invalido. Envie um JSON com os campos "
+            "opcionais 'contact', 'message' e 'headless'."
         ),
         fields=_validation_error_fields(exc),
     )
@@ -53,7 +53,7 @@ async def unhandled_exception_handler(_: Request, exc: Exception) -> JSONRespons
     return _error_response(
         status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
         code="ERRO_INTERNO",
-        message="Erro inesperado ao processar a requisição.",
+        message="Erro inesperado ao processar a requisicao.",
     )
 
 
@@ -81,16 +81,16 @@ def _error_response(
 
 def _http_error_code_and_message(exc: StarletteHTTPException) -> tuple[str, str]:
     if exc.status_code == status.HTTP_404_NOT_FOUND:
-        return "ROTA_NAO_ENCONTRADA", "Rota não encontrada."
+        return "ROTA_NAO_ENCONTRADA", "Rota nao encontrada."
 
     if exc.status_code == status.HTTP_405_METHOD_NOT_ALLOWED:
-        return "METODO_NAO_PERMITIDO", "Método HTTP não permitido para esta rota."
+        return "METODO_NAO_PERMITIDO", "Metodo HTTP nao permitido para esta rota."
 
     if 400 <= exc.status_code < 500:
-        detail = exc.detail if isinstance(exc.detail, str) else "Erro na requisição."
+        detail = exc.detail if isinstance(exc.detail, str) else "Erro na requisicao."
         return "ERRO_NA_REQUISICAO", detail
 
-    detail = exc.detail if isinstance(exc.detail, str) else "Erro inesperado ao processar a requisição."
+    detail = exc.detail if isinstance(exc.detail, str) else "Erro inesperado ao processar a requisicao."
     return "ERRO_INTERNO", detail
 
 

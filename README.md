@@ -1,6 +1,6 @@
-# WhatsApp Notify
+﻿# WhatsApp Notify
 
-API REST em Python 3.12 para enviar mensagens pelo WhatsApp Web usando FastAPI e Playwright.
+API REST em Python 3.12 para controlar uma sessao do WhatsApp Web e enviar mensagens usando FastAPI e Playwright.
 
 A aplicacao usa um perfil persistente do Chromium para reutilizar a sessao autenticada. Na primeira execucao, ou quando a sessao expirar, sera necessario escanear o QR Code no WhatsApp Web.
 
@@ -74,34 +74,71 @@ Ou, apos instalar o pacote:
 whatsapp-notify
 ```
 
-Na primeira execucao, escaneie o QR Code exibido pelo WhatsApp Web. O perfil persistente sera reutilizado nas proximas execucoes.
-
 ## API
 
-### Enviar notificacao
+### Iniciar sessao
 
 ```http
-POST /notifications
+GET /whatsapp/session/start?headless=false
+```
+
+Abre o navegador, aguarda autenticacao quando necessario e mantem a sessao ativa. Se `headless` nao for informado, a API usa `WHATSAPP_HEADLESS`.
+
+### Enviar mensagem com sessao aberta
+
+```http
+POST /whatsapp/messages/send
 Content-Type: application/json
 ```
 
-Corpo:
+Envia mensagem usando uma sessao ja aberta e autenticada. Nao abre nem fecha o navegador.
+
+### Encerrar sessao
+
+```http
+GET /whatsapp/session/stop
+```
+
+Fecha a sessao ativa e o navegador associado.
+
+### Enviar mensagem e fechar
+
+```http
+POST /whatsapp/messages/send-and-close
+Content-Type: application/json
+```
+
+Mantem o comportamento antigo de `POST /notifications`: abre o WhatsApp Web, autentica quando necessario, envia a mensagem e fecha o navegador.
+
+Corpo aceito pelos endpoints de envio:
 
 ```json
 {
   "contact": "Grupo Teste",
-  "message": "Ola pelo WhatsApp Notify"
+  "message": "Ola pelo WhatsApp Notify",
+  "headless": false
 }
 ```
 
-`contact` e `message` sao opcionais se os valores equivalentes estiverem configurados no `.env`.
+`contact` e `message` sao opcionais se os valores equivalentes estiverem configurados no `.env`. `headless` e opcional e sobrescreve `WHATSAPP_HEADLESS` apenas no fluxo que abre navegador.
 
-Resposta de sucesso:
+Resposta de envio:
 
 ```json
 {
-  "success": true,
+  "status": "enviado",
+  "message": "Mensagem enviada com sucesso.",
+  "contact": "Grupo Teste",
   "elapsedTimeInSeconds": 3.21
+}
+```
+
+Resposta de sessao:
+
+```json
+{
+  "status": "ok",
+  "message": "Sessao do WhatsApp Web iniciada com sucesso."
 }
 ```
 
@@ -110,9 +147,8 @@ Resposta de erro:
 ```json
 {
   "error": {
-    "code": "DADOS_OBRIGATORIOS_AUSENTES",
-    "message": "Informe 'contact' no corpo da requisicao ou configure WHATSAPP_TARGET_NAME no ambiente",
-    "fields": ["contact"]
+    "code": "SESSAO_FECHADA",
+    "message": "A sessao do WhatsApp Web esta fechada. Inicie a sessao antes de enviar mensagens."
   }
 }
 ```
@@ -126,19 +162,15 @@ Documentacao gerada pelo FastAPI:
 ## Testes
 
 ```bash
-.\.venv\Scripts\python.exe -m pytest -q
+.\.venv\Scripts\python.exe -m pytest --cov=src --cov-report=term-missing -q
 ```
 
-Ou, com o ambiente virtual ativado:
-
-```bash
-pytest -q
-```
+A cobertura esperada e 100%. Os testes nunca devem acessar a pagina oficial do WhatsApp Web; use mocks, fakes ou paginas virtuais para simular qualquer comportamento do navegador.
 
 ## Observacoes Operacionais
 
-- O envio e confirmado depois que o WhatsApp Web aceita visualmente a mensagem ou esvazia o compositor sem erro/pedencia visivel.
-- A automacao roda fora do event loop da FastAPI para manter a API responsiva.
+- O envio e confirmado depois que o WhatsApp Web aceita visualmente a mensagem ou esvazia o compositor sem erro/pendencia visivel.
+- Os endpoints de sessao mantem um navegador ativo no processo da API.
 - Os envios sao serializados por processo para evitar disputa pelo mesmo perfil persistente.
 - Use apenas um worker por instancia quando compartilhar o mesmo `WHATSAPP_PROFILE_DIR`.
 - Mudancas na interface do WhatsApp Web podem exigir atualizacao de seletores em `src/pages/pages.py` e `src/whatsapp_service.py`.

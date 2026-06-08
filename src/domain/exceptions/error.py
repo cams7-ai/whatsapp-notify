@@ -1,19 +1,37 @@
+﻿"""Excecoes de dominio da aplicacao."""
+
 
 class DomainError(RuntimeError):
-    """Exceção base para erros de domínio."""
+    """Excecao base para erros de dominio."""
 
 
 class NotificationError(DomainError):
-    """Exceção para erros gerais no processamento de notificações."""
+    """Excecao para erros gerais no processamento de notificacoes."""
 
 
 class AuthenticationError(DomainError):
-    """Exceção quando a autenticação falha ou expira."""
+    """Excecao quando a autenticacao falha ou expira."""
 
 
 class TargetNotFoundError(DomainError):
-    """Exceção quando o contato/grupo não é encontrado."""
+    """Excecao quando o contato ou grupo nao e encontrado."""
 
 
 class SendError(DomainError):
-    """Exceção quando a mensagem não pode ser enviada."""
+    """Excecao quando a mensagem nao pode ser enviada."""
+
+
+class SessionAlreadyOpenError(DomainError):
+    """Excecao quando uma sessao ja esta aberta."""
+
+
+class SessionClosedError(DomainError):
+    """Excecao quando uma operacao exige sessao aberta."""
+
+
+class SessionStartError(DomainError):
+    """Excecao quando nao e possivel abrir a sessao."""
+
+
+class SessionStopError(DomainError):
+    """Excecao quando nao e possivel fechar a sessao."""

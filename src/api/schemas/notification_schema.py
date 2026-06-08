@@ -1,7 +1,8 @@
-from pydantic import BaseModel, ConfigDict, Field
+﻿from pydantic import BaseModel, ConfigDict, Field
+
 
 class NotificationRequest(BaseModel):
-    """Corpo opcional para sobrescrever o destino e a mensagem do ambiente."""
+    """Corpo opcional para sobrescrever destino, mensagem e modo do navegador."""
 
     model_config = ConfigDict(
         extra="forbid",
@@ -10,6 +11,7 @@ class NotificationRequest(BaseModel):
                 {
                     "contact": "Grupo Teste",
                     "message": "Mensagem enviada pela API",
+                    "headless": False,
                 },
                 {},
             ]
@@ -23,7 +25,11 @@ class NotificationRequest(BaseModel):
     )
     message: str | None = Field(
         default=None,
-        description="Mensagem que será enviada pelo WhatsApp Web.",
+        description="Mensagem que sera enviada pelo WhatsApp Web.",
+    )
+    headless: bool | None = Field(
+        default=None,
+        description="Sobrescreve WHATSAPP_HEADLESS neste envio, quando informado.",
     )
 
 
@@ -47,5 +53,21 @@ class NotificationResponse(BaseModel):
     target_name: str = Field(alias="contact")
     elapsed_seconds: float = Field(
         alias="elapsedTimeInSeconds",
-        description="Tempo total decorrido, em segundos, até confirmar o envio.",
+        description="Tempo total decorrido, em segundos, ate confirmar o envio.",
     )
+
+
+class SessionResponse(BaseModel):
+    model_config = ConfigDict(
+        json_schema_extra={
+            "examples": [
+                {
+                    "status": "ok",
+                    "message": "Sessao do WhatsApp Web iniciada com sucesso.",
+                }
+            ]
+        },
+    )
+
+    status: str
+    message: str
