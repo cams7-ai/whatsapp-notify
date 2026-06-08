@@ -1,6 +1,7 @@
 ﻿from importlib import import_module
 
-from fastapi.testclient import TestClient
+import httpx
+import pytest
 
 from api.server import app
 from api.schemas.notification_schema import NotificationResponse, SessionResponse
@@ -35,18 +36,20 @@ class FakeRouteHandler:
         )
 
 
-def test_whatsapp_routes_delegate_to_handler(monkeypatch):
+@pytest.mark.anyio
+async def test_whatsapp_routes_delegate_to_handler(monkeypatch):
     fake_handler = FakeRouteHandler()
     monkeypatch.setattr(router_module, "notification_handler", fake_handler)
-    client = TestClient(app, raise_server_exceptions=False)
+    transport = httpx.ASGITransport(app=app, raise_app_exceptions=False)
 
-    start = client.get("/whatsapp/session/start?headless=true")
-    send = client.post("/whatsapp/messages/send", json={"contact": "Grupo", "message": "Ola"})
-    stop = client.get("/whatsapp/session/stop")
-    send_and_close = client.post(
-        "/whatsapp/messages/send-and-close",
-        json={"contact": "Grupo", "message": "Ola", "headless": False},
-    )
+    async with httpx.AsyncClient(transport=transport, base_url="http://testserver") as client:
+        start = await client.get("/whatsapp/session/start?headless=true")
+        send = await client.post("/whatsapp/messages/send", json={"contact": "Grupo", "message": "Ola"})
+        stop = await client.get("/whatsapp/session/stop")
+        send_and_close = await client.post(
+            "/whatsapp/messages/send-and-close",
+            json={"contact": "Grupo", "message": "Ola", "headless": False},
+        )
 
     assert start.status_code == 200
     assert start.json()["status"] == "ok"
@@ -58,10 +61,12 @@ def test_whatsapp_routes_delegate_to_handler(monkeypatch):
     assert send_and_close.json()["elapsedTimeInSeconds"] == 0.2
 
 
-def test_old_notifications_route_is_not_registered():
-    client = TestClient(app, raise_server_exceptions=False)
+@pytest.mark.anyio
+async def test_old_notifications_route_is_not_registered():
+    transport = httpx.ASGITransport(app=app, raise_app_exceptions=False)
 
-    response = client.post("/notifications", json={"contact": "Grupo", "message": "Ola"})
+    async with httpx.AsyncClient(transport=transport, base_url="http://testserver") as client:
+        response = await client.post("/notifications", json={"contact": "Grupo", "message": "Ola"})
 
     assert response.status_code == 404
     assert response.json()["error"]["code"] == "ROTA_NAO_ENCONTRADA"
