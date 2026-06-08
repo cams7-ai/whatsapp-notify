@@ -1,4 +1,4 @@
-﻿"""Servico de aplicacao para controlar a sessao do WhatsApp Web."""
+﻿"""Serviço de aplicação para controlar a sessão do WhatsApp Web."""
 
 from __future__ import annotations
 
@@ -27,7 +27,7 @@ from whatsapp_service import (
 
 
 class WhatsAppSessionService:
-    """Orquestra uma sessao persistente sem expor Playwright para a camada HTTP."""
+    """Orquestra uma sessão persistente sem expor Playwright para a camada HTTP."""
 
     def __init__(self, logger: logging.Logger) -> None:
         self.logger = logger
@@ -39,7 +39,7 @@ class WhatsAppSessionService:
 
     def start(self, config: AppConfig) -> None:
         if self.is_open:
-            raise SessionAlreadyOpenError("Ja existe uma sessao do WhatsApp Web aberta.")
+            raise SessionAlreadyOpenError("Já existe uma sessão do WhatsApp Web aberta.")
 
         session = PersistentWhatsAppSession(config=config, logger=self.logger)
         try:
@@ -49,16 +49,16 @@ class WhatsAppSessionService:
         except AuthenticationTimeoutError as exc:
             raise AuthenticationError(str(exc)) from exc
         except WhatsAppNotifyError as exc:
-            raise SessionStartError(f"Nao foi possivel abrir a sessao do WhatsApp Web: {exc}") from exc
+            raise SessionStartError(f"Não foi possível abrir a sessão do WhatsApp Web: {exc}") from exc
         except Exception as exc:
-            self.logger.exception("Erro inesperado ao iniciar sessao do WhatsApp Web")
-            raise SessionStartError("Nao foi possivel abrir a sessao do WhatsApp Web.") from exc
+            self.logger.exception("Erro inesperado ao iniciar sessão do WhatsApp Web")
+            raise SessionStartError("Não foi possível abrir a sessão do WhatsApp Web.") from exc
 
         self._session = session
 
     def send(self, config: AppConfig) -> None:
         if not self.is_open or self._session is None:
-            raise SessionClosedError("A sessao do WhatsApp Web esta fechada. Inicie a sessao antes de enviar mensagens.")
+            raise SessionClosedError("A sessão do WhatsApp Web está fechada. Inicie a sessão antes de enviar mensagens.")
 
         try:
             self._session.send(target_name=config.target_name, message=config.message)
@@ -72,11 +72,11 @@ class WhatsAppSessionService:
         except MessageSendError as exc:
             raise SendError(str(exc)) from exc
         except WhatsAppNotifyError as exc:
-            raise SendError(f"Erro na automacao: {exc}") from exc
+            raise SendError(f"Erro na automação: {exc}") from exc
 
     def stop(self) -> None:
         if not self.is_open or self._session is None:
-            raise SessionClosedError("A sessao do WhatsApp Web ja esta fechada.")
+            raise SessionClosedError("A sessão do WhatsApp Web já está fechada.")
 
         session = self._session
         try:
@@ -87,8 +87,8 @@ class WhatsAppSessionService:
         except SessionCloseError as exc:
             raise SessionStopError(str(exc)) from exc
         except Exception as exc:
-            self.logger.exception("Erro inesperado ao fechar sessao do WhatsApp Web")
-            raise SessionStopError("Nao foi possivel fechar a sessao do WhatsApp Web.") from exc
+            self.logger.exception("Erro inesperado ao fechar sessão do WhatsApp Web")
+            raise SessionStopError("Não foi possível fechar a sessão do WhatsApp Web.") from exc
         finally:
             if not session.is_open:
                 self._session = None

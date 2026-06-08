@@ -1,4 +1,4 @@
-﻿"""Carregamento e validacao das configuracoes do WhatsApp Notify."""
+﻿"""Carregamento e validação das configurações do WhatsApp Notify."""
 
 from __future__ import annotations
 
@@ -10,17 +10,17 @@ from dotenv import load_dotenv
 
 
 class ConfigError(RuntimeError):
-    """Erro gerado quando uma configuracao obrigatoria esta ausente ou invalida."""
+    """Erro gerado quando uma configuração obrigatória está ausente ou inválida."""
 
 
 class MissingRequiredValueError(ConfigError):
-    """Erro gerado quando a requisicao e o ambiente nao fornecem um valor obrigatorio."""
+    """Erro gerado quando a requisição e o ambiente não fornecem um valor obrigatório."""
 
     def __init__(self, request_field: str, env_name: str) -> None:
         self.request_field = request_field
         self.env_name = env_name
         super().__init__(
-            f"Informe '{request_field}' no corpo da requisicao ou configure {env_name} no ambiente"
+            f"Informe '{request_field}' no corpo da requisição ou configure {env_name} no ambiente"
         )
 
 
@@ -40,7 +40,7 @@ def load_config(
     message: str | None = None,
     headless: bool | None = None,
 ) -> AppConfig:
-    """Carrega configuracoes para um fluxo de envio de mensagem."""
+    """Carrega configurações para um fluxo de envio de mensagem."""
 
     _, base_dir = _load_environment(env_file)
     return AppConfig(
@@ -65,7 +65,7 @@ def load_session_config(
     *,
     headless: bool | None = None,
 ) -> AppConfig:
-    """Carrega configuracoes para abrir uma sessao sem exigir contato ou mensagem."""
+    """Carrega configurações para abrir uma sessão sem exigir contato ou mensagem."""
 
     _, base_dir = _load_environment(env_file)
     return AppConfig(
@@ -118,7 +118,7 @@ def _parse_bool(name: str, default: bool) -> bool:
         return False
 
     raise ConfigError(
-        f"Valor invalido para {name}: use true/false, yes/no, sim/nao ou 1/0"
+        f"Valor inválido para {name}: use true/false, yes/no, sim/não ou 1/0"
     )
 
 
@@ -140,10 +140,10 @@ def _parse_positive_int(name: str, default: int) -> int:
     try:
         parsed = int(value.strip())
     except ValueError as exc:
-        raise ConfigError(f"Valor invalido para {name}: informe um numero inteiro") from exc
+        raise ConfigError(f"Valor inválido para {name}: informe um número inteiro") from exc
 
     if parsed <= 0:
-        raise ConfigError(f"Valor invalido para {name}: informe um numero maior que zero")
+        raise ConfigError(f"Valor inválido para {name}: informe um número maior que zero")
 
     return parsed
 

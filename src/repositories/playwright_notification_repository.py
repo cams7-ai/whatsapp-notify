@@ -1,21 +1,18 @@
-import logging
-from repositories.i_notification_repository import INotificationRepository
+﻿import logging
+
 from config import AppConfig
+from repositories.i_notification_repository import INotificationRepository
+
 
 class PlaywrightNotificationRepository(INotificationRepository):
-    """Implementação do repositório usando Playwright + WhatsApp Web.
-
-    Adapta a automação existente (WhatsAppService) para a ‘interface’
-    de repositório, mantendo compatibilidade.
-    """
+    """Implementação do repositório usando Playwright e WhatsApp Web."""
 
     def __init__(self, config: AppConfig, logger: logging.Logger) -> None:
         self.config = config
         self.logger = logger
 
     def send(self, target_name: str, message: str) -> None:
-        """Envia mensagem via WhatsApp Web + Playwright."""
-        # Import aqui para evitar circular dependency
+        """Envia mensagem via WhatsApp Web com Playwright."""
         from whatsapp_service import WhatsAppService
         from whatsapp_service import (
             AuthenticationTimeoutError,
@@ -25,11 +22,10 @@ class PlaywrightNotificationRepository(INotificationRepository):
         )
         from domain import (
             AuthenticationError,
-            TargetNotFoundError,
             SendError,
+            TargetNotFoundError,
         )
 
-        # Cria novo config com os valores específicos desta requisição
         modified_config = AppConfig(
             target_name=target_name,
             message=message,
@@ -41,11 +37,11 @@ class PlaywrightNotificationRepository(INotificationRepository):
         try:
             service = WhatsAppService(config=modified_config, logger=self.logger)
             service.run()
-        except AuthenticationTimeoutError as e:
-            raise AuthenticationError(str(e)) from e
-        except PlaywrightTargetNotFoundError as e:
-            raise TargetNotFoundError(str(e)) from e
-        except MessageSendError as e:
-            raise SendError(str(e)) from e
-        except WhatsAppNotifyError as e:
-            raise SendError(f"Erro na automação: {e}") from e
+        except AuthenticationTimeoutError as exc:
+            raise AuthenticationError(str(exc)) from exc
+        except PlaywrightTargetNotFoundError as exc:
+            raise TargetNotFoundError(str(exc)) from exc
+        except MessageSendError as exc:
+            raise SendError(str(exc)) from exc
+        except WhatsAppNotifyError as exc:
+            raise SendError(f"Erro na automação: {exc}") from exc

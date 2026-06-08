@@ -4,17 +4,17 @@ from __future__ import annotations
 
 from fastapi import Request, status
 from fastapi.exceptions import RequestValidationError
-from fastapi.responses import JSONResponse
 from starlette.exceptions import HTTPException as StarletteHTTPException
 
 from api.exceptions import ApiError
+from api.responses import Utf8JSONResponse
 from logger import configure_logger
 
 
 logger = configure_logger()
 
 
-async def api_error_handler(_: Request, exc: ApiError) -> JSONResponse:
+async def api_error_handler(_: Request, exc: ApiError) -> Utf8JSONResponse:
     return _error_response(
         status_code=exc.status_code,
         code=exc.code,
@@ -26,19 +26,19 @@ async def api_error_handler(_: Request, exc: ApiError) -> JSONResponse:
 async def request_validation_error_handler(
     _: Request,
     exc: RequestValidationError,
-) -> JSONResponse:
+) -> Utf8JSONResponse:
     return _error_response(
         status_code=status.HTTP_400_BAD_REQUEST,
         code="REQUISICAO_INVALIDA",
         message=(
-            "Corpo da requisicao invalido. Envie um JSON com os campos "
+            "Corpo da requisição inválido. Envie um JSON com os campos "
             "opcionais 'contact', 'message' e 'headless'."
         ),
         fields=_validation_error_fields(exc),
     )
 
 
-async def http_exception_handler(_: Request, exc: StarletteHTTPException) -> JSONResponse:
+async def http_exception_handler(_: Request, exc: StarletteHTTPException) -> Utf8JSONResponse:
     code, message = _http_error_code_and_message(exc)
     return _error_response(
         status_code=exc.status_code,
@@ -48,12 +48,12 @@ async def http_exception_handler(_: Request, exc: StarletteHTTPException) -> JSO
     )
 
 
-async def unhandled_exception_handler(_: Request, exc: Exception) -> JSONResponse:
+async def unhandled_exception_handler(_: Request, exc: Exception) -> Utf8JSONResponse:
     logger.exception("Erro inesperado fora do fluxo principal da API")
     return _error_response(
         status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
         code="ERRO_INTERNO",
-        message="Erro inesperado ao processar a requisicao.",
+        message="Erro inesperado ao processar a requisição.",
     )
 
 
@@ -64,7 +64,7 @@ def _error_response(
     message: str,
     fields: list[str] | None = None,
     headers: dict[str, str] | None = None,
-) -> JSONResponse:
+) -> Utf8JSONResponse:
     error: dict[str, str | list[str]] = {
         "code": code,
         "message": message,
@@ -72,7 +72,7 @@ def _error_response(
     if fields:
         error["fields"] = fields
 
-    return JSONResponse(
+    return Utf8JSONResponse(
         status_code=status_code,
         content={"error": error},
         headers=headers,
@@ -81,16 +81,16 @@ def _error_response(
 
 def _http_error_code_and_message(exc: StarletteHTTPException) -> tuple[str, str]:
     if exc.status_code == status.HTTP_404_NOT_FOUND:
-        return "ROTA_NAO_ENCONTRADA", "Rota nao encontrada."
+        return "ROTA_NAO_ENCONTRADA", "Rota não encontrada."
 
     if exc.status_code == status.HTTP_405_METHOD_NOT_ALLOWED:
-        return "METODO_NAO_PERMITIDO", "Metodo HTTP nao permitido para esta rota."
+        return "METODO_NAO_PERMITIDO", "Método HTTP não permitido para esta rota."
 
     if 400 <= exc.status_code < 500:
-        detail = exc.detail if isinstance(exc.detail, str) else "Erro na requisicao."
+        detail = exc.detail if isinstance(exc.detail, str) else "Erro na requisição."
         return "ERRO_NA_REQUISICAO", detail
 
-    detail = exc.detail if isinstance(exc.detail, str) else "Erro inesperado ao processar a requisicao."
+    detail = exc.detail if isinstance(exc.detail, str) else "Erro inesperado ao processar a requisição."
     return "ERRO_INTERNO", detail
 
 

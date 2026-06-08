@@ -25,7 +25,7 @@ class NotificationRequest(BaseModel):
     )
     message: str | None = Field(
         default=None,
-        description="Mensagem que sera enviada pelo WhatsApp Web.",
+        description="Mensagem que será enviada pelo WhatsApp Web.",
     )
     headless: bool | None = Field(
         default=None,
@@ -53,7 +53,7 @@ class NotificationResponse(BaseModel):
     target_name: str = Field(alias="contact")
     elapsed_seconds: float = Field(
         alias="elapsedTimeInSeconds",
-        description="Tempo total decorrido, em segundos, ate confirmar o envio.",
+        description="Tempo total decorrido, em segundos, até confirmar o envio.",
     )
 
 
@@ -63,7 +63,7 @@ class SessionResponse(BaseModel):
             "examples": [
                 {
                     "status": "ok",
-                    "message": "Sessao do WhatsApp Web iniciada com sucesso.",
+                    "message": "Sessão do WhatsApp Web iniciada com sucesso.",
                 }
             ]
         },

@@ -6,21 +6,21 @@ OPENAPI_TAGS = [
     {
         "name": "whatsapp",
         "description": (
-            "Controle de sessao e envio de mensagens pelo WhatsApp Web usando "
-            "dados da requisicao ou variaveis de ambiente como fallback."
+            "Controle de sessão e envio de mensagens pelo WhatsApp Web usando "
+            "dados da requisição ou variáveis de ambiente como fallback."
         ),
     },
 ]
 
 BAD_REQUEST_EXAMPLES = {
     "invalidRequest": {
-        "summary": "Corpo invalido",
+        "summary": "Corpo inválido",
         "value": {
             "error": {
                 "code": "REQUISICAO_INVALIDA",
                 "message": (
-                    "Corpo da requisicao invalido. Envie um JSON com os campos "
-                    "opcionais 'contact' e 'message'."
+                    "Corpo da requisição inválido. Envie um JSON com os campos "
+                    "opcionais 'contact', 'message' e 'headless'."
                 ),
                 "fields": ["message"],
             }
@@ -32,7 +32,7 @@ BAD_REQUEST_EXAMPLES = {
             "error": {
                 "code": "DADOS_OBRIGATORIOS_AUSENTES",
                 "message": (
-                    "Informe 'contact' no corpo da requisicao ou configure "
+                    "Informe 'contact' no corpo da requisição ou configure "
                     "WHATSAPP_TARGET_NAME no ambiente"
                 ),
                 "fields": ["contact"],
@@ -40,30 +40,30 @@ BAD_REQUEST_EXAMPLES = {
         },
     },
     "contactNotFound": {
-        "summary": "Contato ou grupo nao encontrado",
+        "summary": "Contato ou grupo não encontrado",
         "value": {
             "error": {
                 "code": "DESTINO_NAO_ENCONTRADO",
-                "message": "Contato ou grupo nao encontrado: Grupo Teste",
+                "message": "Contato ou grupo não encontrado: Grupo Teste",
                 "fields": ["contact"],
             }
         },
     },
     "sessionAlreadyOpen": {
-        "summary": "Sessao ja aberta",
+        "summary": "Sessão já aberta",
         "value": {
             "error": {
                 "code": "SESSAO_JA_ABERTA",
-                "message": "Ja existe uma sessao do WhatsApp Web aberta.",
+                "message": "Já existe uma sessão do WhatsApp Web aberta.",
             }
         },
     },
     "sessionClosed": {
-        "summary": "Sessao fechada",
+        "summary": "Sessão fechada",
         "value": {
             "error": {
                 "code": "SESSAO_FECHADA",
-                "message": "A sessao do WhatsApp Web esta fechada. Inicie a sessao antes de enviar mensagens.",
+                "message": "A sessão do WhatsApp Web está fechada. Inicie a sessão antes de enviar mensagens.",
             }
         },
     },
@@ -71,44 +71,44 @@ BAD_REQUEST_EXAMPLES = {
 
 INTERNAL_SERVER_ERROR_EXAMPLES = {
     "invalidConfiguration": {
-        "summary": "Configuracao invalida",
+        "summary": "Configuração inválida",
         "value": {
             "error": {
                 "code": "CONFIGURACAO_INVALIDA",
                 "message": (
-                    "Configuracao invalida do servidor: Valor invalido para "
-                    "WHATSAPP_TIMEOUT_SECONDS: informe um numero inteiro"
+                    "Configuração inválida do servidor: Valor inválido para "
+                    "WHATSAPP_TIMEOUT_SECONDS: informe um número inteiro"
                 ),
             }
         },
     },
     "authenticationExpired": {
-        "summary": "Timeout de autenticacao",
+        "summary": "Timeout de autenticação",
         "value": {
             "error": {
                 "code": "AUTENTICACAO_EXPIRADA",
                 "message": (
-                    "Autenticacao nao concluida em 60 segundos. Escaneie o QR Code "
+                    "Autenticação não concluída em 60 segundos. Escaneie o QR Code "
                     "do WhatsApp Web no navegador aberto e tente novamente."
                 ),
             }
         },
     },
     "sessionStartFailure": {
-        "summary": "Falha ao iniciar sessao",
+        "summary": "Falha ao iniciar sessão",
         "value": {
             "error": {
                 "code": "FALHA_AO_INICIAR_SESSAO",
-                "message": "Nao foi possivel abrir a sessao do WhatsApp Web.",
+                "message": "Não foi possível abrir a sessão do WhatsApp Web.",
             }
         },
     },
     "sessionStopFailure": {
-        "summary": "Falha ao encerrar sessao",
+        "summary": "Falha ao encerrar sessão",
         "value": {
             "error": {
                 "code": "FALHA_AO_ENCERRAR_SESSAO",
-                "message": "Nao foi possivel fechar a sessao do WhatsApp Web.",
+                "message": "Não foi possível fechar a sessão do WhatsApp Web.",
             }
         },
     },
@@ -118,7 +118,7 @@ INTERNAL_SERVER_ERROR_EXAMPLES = {
             "error": {
                 "code": "FALHA_NO_ENVIO",
                 "message": (
-                    "Nao foi possivel confirmar o envio da mensagem: Mensagem nao "
+                    "Não foi possível confirmar o envio da mensagem: Mensagem não "
                     "foi confirmada pelo WhatsApp Web. Status detectado: pendente."
                 ),
             }
@@ -129,7 +129,7 @@ INTERNAL_SERVER_ERROR_EXAMPLES = {
         "value": {
             "error": {
                 "code": "ERRO_INTERNO",
-                "message": "Erro inesperado ao processar a requisicao.",
+                "message": "Erro inesperado ao processar a requisição.",
             }
         },
     },

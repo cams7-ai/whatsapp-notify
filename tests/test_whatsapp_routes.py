@@ -12,7 +12,7 @@ router_module = import_module("api.routers.notification_router")
 class FakeRouteHandler:
     async def start_session(self, headless=None):
         self.headless = headless
-        return SessionResponse(status="ok", message="sessao iniciada")
+        return SessionResponse(status="ok", message="sessão iniciada")
 
     async def send_with_open_session(self, payload):
         self.payload = payload
@@ -24,7 +24,7 @@ class FakeRouteHandler:
         )
 
     async def stop_session(self):
-        return SessionResponse(status="ok", message="sessao encerrada")
+        return SessionResponse(status="ok", message="sessão encerrada")
 
     async def send_and_close(self, payload):
         self.payload = payload
@@ -44,15 +44,17 @@ async def test_whatsapp_routes_delegate_to_handler(monkeypatch):
 
     async with httpx.AsyncClient(transport=transport, base_url="http://testserver") as client:
         start = await client.get("/whatsapp/session/start?headless=true")
-        send = await client.post("/whatsapp/messages/send", json={"contact": "Grupo", "message": "Ola"})
+        send = await client.post("/whatsapp/messages/send", json={"contact": "Grupo", "message": "Olá"})
         stop = await client.get("/whatsapp/session/stop")
         send_and_close = await client.post(
             "/whatsapp/messages/send-and-close",
-            json={"contact": "Grupo", "message": "Ola", "headless": False},
+            json={"contact": "Grupo", "message": "Olá", "headless": False},
         )
 
     assert start.status_code == 200
     assert start.json()["status"] == "ok"
+    assert "charset=utf-8" in start.headers["content-type"]
+    assert start.json()["message"] == "sessão iniciada"
     assert fake_handler.headless is True
     assert send.status_code == 200
     assert send.json()["contact"] == "Grupo"
@@ -66,7 +68,9 @@ async def test_old_notifications_route_is_not_registered():
     transport = httpx.ASGITransport(app=app, raise_app_exceptions=False)
 
     async with httpx.AsyncClient(transport=transport, base_url="http://testserver") as client:
-        response = await client.post("/notifications", json={"contact": "Grupo", "message": "Ola"})
+        response = await client.post("/notifications", json={"contact": "Grupo", "message": "Olá"})
 
     assert response.status_code == 404
+    assert "charset=utf-8" in response.headers["content-type"]
     assert response.json()["error"]["code"] == "ROTA_NAO_ENCONTRADA"
+    assert response.json()["error"]["message"] == "Rota não encontrada."

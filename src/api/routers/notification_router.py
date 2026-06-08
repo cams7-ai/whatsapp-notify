@@ -1,4 +1,4 @@
-﻿"""Rotas HTTP para controle de sessao e envio de mensagens do WhatsApp."""
+﻿"""Rotas HTTP para controle de sessão e envio de mensagens do WhatsApp."""
 
 from __future__ import annotations
 
@@ -14,12 +14,12 @@ router = APIRouter(prefix="/whatsapp", tags=["whatsapp"])
 ERROR_RESPONSES = {
     400: {
         "model": ErrorResponse,
-        "description": "Erro de requisicao",
+        "description": "Erro de requisição",
         "content": {"application/json": {"examples": BAD_REQUEST_EXAMPLES}},
     },
     500: {
         "model": ErrorResponse,
-        "description": "Erro interno ou de automacao",
+        "description": "Erro interno ou de automação",
         "content": {"application/json": {"examples": INTERNAL_SERVER_ERROR_EXAMPLES}},
     },
 }
@@ -28,10 +28,10 @@ ERROR_RESPONSES = {
 @router.get(
     "/session/start",
     response_model=SessionResponse,
-    summary="Iniciar sessao do WhatsApp Web",
+    summary="Iniciar sessão do WhatsApp Web",
     description=(
-        "Abre o navegador, aguarda autenticacao quando necessario e mantem a "
-        "sessao do WhatsApp Web ativa para novos envios."
+        "Abre o navegador, aguarda autenticação quando necessário e mantém a "
+        "sessão do WhatsApp Web ativa para novos envios."
     ),
     operation_id="startWhatsAppSession",
     responses=ERROR_RESPONSES,
@@ -45,10 +45,10 @@ async def start_whatsapp_session(
 @router.post(
     "/messages/send",
     response_model=NotificationResponse,
-    summary="Enviar mensagem usando sessao aberta",
+    summary="Enviar mensagem usando sessão aberta",
     description=(
-        "Envia uma mensagem usando uma sessao do WhatsApp Web ja aberta e "
-        "autenticada. Nao abre nem fecha o navegador."
+        "Envia uma mensagem usando uma sessão do WhatsApp Web já aberta e "
+        "autenticada. Não abre nem fecha o navegador."
     ),
     operation_id="sendWhatsAppMessage",
     responses=ERROR_RESPONSES,
@@ -62,8 +62,8 @@ async def send_whatsapp_message(
 @router.get(
     "/session/stop",
     response_model=SessionResponse,
-    summary="Encerrar sessao do WhatsApp Web",
-    description="Fecha a sessao ativa do WhatsApp Web e o navegador associado.",
+    summary="Encerrar sessão do WhatsApp Web",
+    description="Fecha a sessão ativa do WhatsApp Web e o navegador associado.",
     operation_id="stopWhatsAppSession",
     responses=ERROR_RESPONSES,
 )
@@ -74,10 +74,10 @@ async def stop_whatsapp_session() -> SessionResponse:
 @router.post(
     "/messages/send-and-close",
     response_model=NotificationResponse,
-    summary="Enviar mensagem e encerrar sessao",
+    summary="Enviar mensagem e encerrar sessão",
     description=(
-        "Mantem o comportamento antigo de POST /notifications: abre o WhatsApp "
-        "Web, autentica quando necessario, envia a mensagem e fecha o navegador."
+        "Mantém o comportamento antigo de POST /notifications: abre o WhatsApp "
+        "Web, autentica quando necessário, envia a mensagem e fecha o navegador."
     ),
     operation_id="sendWhatsAppMessageAndClose",
     responses=ERROR_RESPONSES,

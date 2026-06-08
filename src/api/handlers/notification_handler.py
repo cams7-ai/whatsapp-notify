@@ -1,4 +1,4 @@
-﻿"""Orquestracao HTTP para mensagens e sessao do WhatsApp Web."""
+﻿"""Orquestração HTTP para mensagens e sessão do WhatsApp Web."""
 
 from __future__ import annotations
 
@@ -28,7 +28,7 @@ from services import INotificationService, NotificationService, WhatsAppSessionS
 
 
 class NotificationHandler:
-    """Adapta requisicoes HTTP para os fluxos de aplicacao do WhatsApp."""
+    """Adapta requisições HTTP para os fluxos de aplicação do WhatsApp."""
 
     def __init__(self, logger: logging.Logger, session_service: WhatsAppSessionService | None = None) -> None:
         self.logger = logger
@@ -46,7 +46,7 @@ class NotificationHandler:
 
         return SessionResponse(
             status="ok",
-            message="Sessao do WhatsApp Web iniciada com sucesso.",
+            message="Sessão do WhatsApp Web iniciada com sucesso.",
         )
 
     async def send_with_open_session(self, payload: NotificationRequest | None) -> NotificationResponse:
@@ -54,7 +54,7 @@ class NotificationHandler:
         request_payload = payload or NotificationRequest()
         config = self._load_request_config(request_payload)
 
-        self.logger.info("Requisicao recebida para envio em sessao aberta: %s", config.target_name)
+        self.logger.info("Requisição recebida para envio em sessão aberta: %s", config.target_name)
 
         try:
             async with self._operation_lock:
@@ -73,7 +73,7 @@ class NotificationHandler:
 
         return SessionResponse(
             status="ok",
-            message="Sessao do WhatsApp Web encerrada com sucesso.",
+            message="Sessão do WhatsApp Web encerrada com sucesso.",
         )
 
     async def send_and_close(self, payload: NotificationRequest | None) -> NotificationResponse:
@@ -81,7 +81,7 @@ class NotificationHandler:
         request_payload = payload or NotificationRequest()
         config = self._load_request_config(request_payload)
 
-        self.logger.info("Requisicao recebida para envio ao destino: %s", config.target_name)
+        self.logger.info("Requisição recebida para envio ao destino: %s", config.target_name)
 
         try:
             async with self._operation_lock:
@@ -113,7 +113,7 @@ class NotificationHandler:
             raise ApiError(
                 status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
                 code="CONFIGURACAO_INVALIDA",
-                message=f"Configuracao invalida do servidor: {exc}",
+                message=f"Configuração inválida do servidor: {exc}",
             ) from exc
 
     @staticmethod
@@ -124,7 +124,7 @@ class NotificationHandler:
             raise ApiError(
                 status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
                 code="CONFIGURACAO_INVALIDA",
-                message=f"Configuracao invalida do servidor: {exc}",
+                message=f"Configuração inválida do servidor: {exc}",
             ) from exc
 
     def _send_message_and_close(self, config: AppConfig) -> None:
@@ -191,20 +191,20 @@ class NotificationHandler:
             raise ApiError(
                 status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
                 code="FALHA_NO_ENVIO",
-                message=f"Nao foi possivel confirmar o envio da mensagem: {exc}",
+                message=f"Não foi possível confirmar o envio da mensagem: {exc}",
             ) from exc
         if isinstance(exc, DomainError):
             raise ApiError(
                 status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
                 code="FALHA_NA_AUTOMACAO",
-                message=f"Falha na automacao do WhatsApp Web: {exc}",
+                message=f"Falha na automação do WhatsApp Web: {exc}",
             ) from exc
 
-        self.logger.exception("Erro inesperado ao processar requisicao")
+        self.logger.exception("Erro inesperado ao processar requisição")
         raise ApiError(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
             code="ERRO_INTERNO",
-            message="Erro inesperado ao processar a requisicao.",
+            message="Erro inesperado ao processar a requisição.",
         ) from exc
 
 

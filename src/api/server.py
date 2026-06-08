@@ -1,4 +1,4 @@
-"""API REST do WhatsApp Notify."""
+﻿"""API REST do WhatsApp Notify."""
 
 from __future__ import annotations
 
@@ -14,6 +14,7 @@ from api.exception_handlers import (
 )
 from api.exceptions import ApiError
 from api.openapi import OPENAPI_TAGS
+from api.responses import Utf8JSONResponse
 from api.routers import notification_router
 
 
@@ -25,6 +26,7 @@ app = FastAPI(
     redoc_url="/redoc",
     openapi_url="/openapi.json",
     openapi_tags=OPENAPI_TAGS,
+    default_response_class=Utf8JSONResponse,
 )
 
 app.add_exception_handler(ApiError, api_error_handler)
