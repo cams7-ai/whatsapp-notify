@@ -1,14 +1,14 @@
 # Guia de Desenvolvimento
 
-## Instalar dependências de desenvolvimento
+## Instalar Dependencias
 
 ```bash
 pip install -e ".[dev]"
 ```
 
-Isto instala `pytest` e `pytest-cov` necessários para rodar testes.
+Isso instala a aplicacao em modo editavel e inclui `pytest` e `pytest-cov`.
 
-## Rodar testes unitários
+## Rodar Testes
 
 ```bash
 pytest tests/ -v
@@ -17,47 +17,60 @@ pytest tests/ -v
 Com cobertura:
 
 ```bash
-pytest tests/ --cov=src/app --cov-report=term-missing
+pytest tests/ --cov=src --cov-report=term-missing
 ```
 
-## Estrutura de testes
+No Windows, se o Python global nao tiver `pytest`, use o ambiente virtual local:
 
+```powershell
+.\.venv\Scripts\python.exe -m pytest tests/ -v
 ```
+
+## Estrutura de Testes
+
+```text
 tests/
-├── test_services.py       # Testes do NotificationService
-├── test_domain.py         # Testes do modelo Notification
-├── test_repositories.py   # Testes do repositório (mocks)
-└── test_main.py           # Testes de integração (endpoints)
+|-- test_logger.py
+|-- test_pages.py
+|-- test_playwright_notification_repository.py
+|-- test_server_helpers.py
+|-- test_services.py
+`-- test_coverage_marker.py
 ```
 
-## Adicionar novo teste
+## Adicionar Novo Teste
 
-1. Crie arquivo `test_*.py` em `tests/`
-2. Use fixtures do pytest para DI mockado
-3. Use `unittest.mock.Mock` para mockar `NotificationRepository`
+1. Crie um arquivo `test_*.py` em `tests/`.
+2. Use mocks para dependencias externas como Playwright, navegador e repositorios.
+3. Teste dominio e servicos sem subir FastAPI quando o comportamento for interno.
+4. Teste API apenas quando precisar validar contrato HTTP.
 
 Exemplo:
 
 ```python
-import pytest
 from unittest.mock import Mock
+
 from services import NotificationService
 
 
-def test_service_sends_notification(self):
-    mock_repo = Mock()
-    service = NotificationService(mock_repo, Mock())
+def test_service_sends_notification():
+    repository = Mock()
+    logger = Mock()
+    service = NotificationService(repository, logger)
 
-    service.send("Grupo", "Olá")
+    service.send("Grupo", "Ola")
 
-    mock_repo.send.assert_called_once_with("Grupo", "Olá")
+    repository.send.assert_called_once_with("Grupo", "Ola")
 ```
 
-## Estender a arquitetura
+## Estender a Arquitetura
 
-### Adicionar novo repositório (ex: Twilio)
+### Novo Repositorio
 
-1. Crie `src/app/repositories/twilio_repository.py`:
+1. Crie `src/repositories/twilio_repository.py`.
+2. Implemente `INotificationRepository`.
+3. Converta erros externos para excecoes de dominio.
+4. Ajuste a factory que seleciona o repositorio.
 
 ```python
 from repositories import INotificationRepository
@@ -69,125 +82,58 @@ class TwilioNotificationRepository(INotificationRepository):
         self.logger = logger
 
     def send(self, target_name: str, message: str) -> None:
-        # Lógica Twilio aqui
+        # Integracao Twilio aqui.
         pass
 ```
 
-2. Em `src/app/main.py`, customize a factory de repositório:
+### Nova Pagina POM
+
+1. Em `src/pages/pages.py`, crie uma classe baseada em `IBasePage`.
+2. Coloque seletores como atributos privados da classe.
+3. Exponha metodos de alto nivel, como `open_status()` ou `find_message_box()`.
+4. Exporte a nova classe em `src/pages/__init__.py`.
 
 ```python
-def _get_repository(config: AppConfig) -> NotificationRepository:
-    repo_type = os.getenv("NOTIFICATION_REPO", "playwright")
-    if repo_type == "twilio":
-        return TwilioNotificationRepository(config, logger)
-    return PlaywrightNotificationRepository(config, logger)
+from pages.i_base_page import IBasePage
 
-def _send_message(config: AppConfig) -> None:
-    repository = _get_repository(config)
-    service = NotificationService(repository, logger)
-    service.send(config.target_name, config.message)
+
+class StatusPage(IBasePage):
+    _status_selectors = (...)
+
+    def open_status(self) -> None:
+        status_button = self._first_visible_locator(self._status_selectors, timeout_ms=5000)
+        if status_button is None:
+            raise RuntimeError("Status nao encontrado")
+        status_button.click()
 ```
 
-3. Teste a nova implementação mockando a interface:
+### Novo Modelo de Dominio
 
-```python
-def test_twilio_repository_sends():
-    from src import TwilioNotificationRepository
+1. Crie ou edite arquivos em `src/domain/`.
+2. Evite dependencias de FastAPI, Playwright ou variaveis de ambiente.
+3. Cubra validacoes com testes unitarios.
 
-    repo = TwilioNotificationRepository(config, logger)
-    # Não lança erro
-    repo.send("Grupo", "Olá")
-```
+## Tratamento de Erros
 
-### Adicionar nova página (POM)
-
-1. Em `src/app/pages/__init__.py`, adicione classe baseada em `BasePage`:
-
-```python
-class NewPage(BasePage):
-    _selectors = (...)
-    
-    def some_action(self) -> None:
-        # Use _first_visible_locator(), _is_any_selector_visible()
-        pass
-```
-
-2. Use em `WhatsAppService` quando necessário:
-
-```python
-from pages import NewPage
-
-# Em WhatsAppService.run()
-new_page = NewPage(page, self.logger)
-new_page.some_action()
-```
-
-### Adicionar novo modelo de domínio
-
-1. Em `src/app/domain/__init__.py`, adicione:
-
-```python
-@dataclass(frozen=True)
-class MyModel:
-    field1: str
-    field2: int
-```
-
-2. Use em services ou validação:
-
-```python
-from domain import MyModel
-
-model = MyModel(field1="value", field2=123)
-```
-
-## Tratamento de erros
-
-Exceções de domínio são mapeadas automaticamente em `main.py`:
-
-```python
-try:
-    service.send(...)
-except TargetNotFoundError:
-    # → HTTP 400 + code DESTINO_NAO_ENCONTRADO
-except AuthenticationError:
-    # → HTTP 500 + code AUTENTICACAO_EXPIRADA
-except SendError:
-    # → HTTP 500 + code FALHA_NO_ENVIO
-except DomainError:
-    # → HTTP 500 + code FALHA_NA_AUTOMACAO
-```
-
-Para adicionar novo mapeamento:
-
-```python
-except MyCustomError as exc:
-    raise ApiError(
-        status_code=status.HTTP_400_BAD_REQUEST,
-        code="MEU_CODIGO_ERRO",
-        message=str(exc),
-    ) from exc
-```
+- Erros de dominio ficam em `src/domain/exceptions/`.
+- Erros HTTP ficam na camada `src/api/`.
+- Adaptadores devem capturar erros externos e converter para erros da aplicacao.
 
 ## Logging
 
-O logger está disponível em toda aplicação:
+Use o logger configurado em `src/logger.py` e injete nas classes que precisam registrar eventos.
 
 ```python
 from logger import configure_logger
 
 logger = configure_logger()
-
 logger.info("Mensagem informativa")
-logger.warning("Aviso")
-logger.exception("Erro com stack trace")
 ```
 
-## Próximas melhorias recomendadas
+## Regras Praticas
 
-1. **Usar `dependency-injector`**: Automatizar DI
-2. **Adicionar eventos de domínio**: Padrão para notificações assíncronas
-3. **Usar casos de uso (Use Cases)**: Se precisar de múltiplos fluxos
-4. **Integração contínua**: GitHub Actions para rodar testes
-5. **Logging estruturado**: Integrar com `structlog`
-
+- Nao coloque seletores de UI em servicos de dominio.
+- Nao acesse FastAPI dentro de `domain/` ou `services/`.
+- Use Page Objects para interacoes de Playwright reutilizaveis.
+- Mantenha testes de Playwright com fakes/mocks sempre que possivel.
+- Use apenas um worker por instancia quando compartilhar o mesmo perfil do Chromium.

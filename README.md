@@ -2,63 +2,45 @@
 
 API REST em Python 3.12 para enviar mensagens pelo WhatsApp Web usando FastAPI e Playwright.
 
-O projeto usa um perfil persistente do Chromium para reutilizar a sessão autenticada. Na primeira execução, ou quando a sessão expirar, será necessário escanear o QR Code do WhatsApp Web.
+A aplicacao usa um perfil persistente do Chromium para reutilizar a sessao autenticada. Na primeira execucao, ou quando a sessao expirar, sera necessario escanear o QR Code no WhatsApp Web.
 
 ## Arquitetura
 
-Este projeto segue **Clean Architecture** com separação clara de camadas, aplicando **SOLID**, **Repository Pattern**, **Service Layer**, **Dependency Injection** e **Page Object Model (POM)**.
+O projeto segue Clean Architecture com separacao entre API, aplicacao, dominio e infraestrutura.
 
-Veja [ARCHITECTURE.md](./ARCHITECTURE.md) para detalhes completos da estrutura.
-
-### Estrutura de Camadas
-
-```
-Presentation    (FastAPI endpoints)  → main.py
-    ↓
-Application     (Service Layer)      → services/
-    ↓
-Domain          (Modelos & exceções) → domain/
-    ↓
-Infrastructure  (Repositório & POMs) → repositories/, pages/
+```text
+Presentation  -> src/api/, src/main.py
+Application   -> src/services/
+Domain        -> src/domain/
+Infrastructure-> src/repositories/, src/pages/, src/whatsapp_service.py
 ```
 
-Benefícios:
-- **Testável**: Dependências são injetadas; fácil mockar repositório
-- **Extensível**: Adicione novo repositório (ex: Twilio) sem alterar serviço
-- **Manutenível**: Seletores de UI centralizados em POMs
-- **Independente**: Lógica de negócio isolada de frameworks
+Detalhes completos ficam em [ARCHITECTURE.md](./ARCHITECTURE.md).
 
-## Instalação
+## Requisitos
 
-### Criar ambiente virtual
+- Python 3.12+
+- Chromium instalado pelo Playwright
+- Uma conta WhatsApp com acesso ao WhatsApp Web
+
+## Instalacao
 
 ```bash
 python -m venv .venv
-```
-
-### Ativar ambiente
-
-```bash
-.venv\Scripts\Activate.ps1
-```
-
-### Instalar dependências
-
-```bash
-pip install -e .
-```
-
-### Instalar os navegadores do Playwright
-
-```bash
+.\.venv\Scripts\activate
+pip install -e ".[dev]"
 playwright install chromium
 ```
 
-## Configuração
+Em Linux/macOS, adapte a ativacao do ambiente virtual:
 
-Crie um arquivo `.env` com base em `.env.example`.
+```bash
+source .venv/bin/activate
+```
 
-Exemplo:
+## Configuracao
+
+Crie um arquivo `.env` a partir de `.env.example`.
 
 ```env
 WHATSAPP_TARGET_NAME=Grupo Teste
@@ -70,132 +52,94 @@ API_HOST=0.0.0.0
 API_PORT=8000
 ```
 
-Variáveis:
+Variaveis principais:
 
-- `WHATSAPP_TARGET_NAME`: nome exato do contato individual ou grupo usado quando `contact` não for enviado no corpo da requisição.
-- `WHATSAPP_MESSAGE`: mensagem usada quando `message` não for enviada no corpo da requisição.
-- `WHATSAPP_HEADLESS`: use `false` para abrir o navegador visível, recomendado no Windows e na primeira autenticação.
-- `WHATSAPP_PROFILE_DIR`: diretório do perfil persistente do Chromium.
-- `WHATSAPP_TIMEOUT_SECONDS`: tempo máximo para autenticação, busca e envio.
-- `API_HOST`: host usado pelo servidor FastAPI. Valor padrão: `0.0.0.0`.
-- `API_PORT`: porta usada pelo servidor FastAPI. Valor padrão: `8000`.
+- `WHATSAPP_TARGET_NAME`: contato ou grupo usado quando `contact` nao for enviado na requisicao.
+- `WHATSAPP_MESSAGE`: mensagem usada quando `message` nao for enviada na requisicao.
+- `WHATSAPP_HEADLESS`: use `false` na primeira autenticacao para visualizar o QR Code.
+- `WHATSAPP_PROFILE_DIR`: diretorio do perfil persistente do Chromium.
+- `WHATSAPP_TIMEOUT_SECONDS`: timeout maximo para autenticacao, busca e envio.
+- `API_HOST`: host do servidor FastAPI.
+- `API_PORT`: porta do servidor FastAPI.
 
-## Execução
+## Execucao
 
 ```bash
 python -m main
 ```
 
-Também é possível usar o comando instalado:
+Ou, apos instalar o pacote:
 
 ```bash
 whatsapp-notify
 ```
 
-## Testes
+Na primeira execucao, escaneie o QR Code exibido pelo WhatsApp Web. O perfil persistente sera reutilizado nas proximas execucoes.
 
-Testes unitários (não requerem Playwright):
+## API
 
-```bash
-pytest tests/ -v
-```
-
-Exemplos de teste em `tests/test_services.py` demonstram como a arquitetura Clean facilita testes isolados.
-
-## Documentação da API
-
-Com a aplicação em execução, use os recursos gerados automaticamente pelo FastAPI:
-
-- Swagger UI: `http://localhost:8000/docs`
-- ReDoc: `http://localhost:8000/redoc`
-- OpenAPI JSON: `http://localhost:8000/openapi.json`
-
-O Swagger UI permite testar o `POST /notifications` pelo navegador. O ReDoc oferece uma visualização mais estável para leitura do contrato. O OpenAPI JSON pode ser importado em ferramentas como Postman, Insomnia ou geradores de clientes HTTP.
-
-Para consultar o contrato OpenAPI pelo terminal:
-
-```text
-http://localhost:8000/openapi.json
-```
-
-## Endpoint
-
-### Enviar mensagem
+### Enviar notificacao
 
 ```http
 POST /notifications
 Content-Type: application/json
 ```
 
-Corpo da requisição:
+Corpo:
 
 ```json
 {
   "contact": "Grupo Teste",
-  "message": "Mensagem enviada pela API"
+  "message": "Ola pelo WhatsApp Notify"
 }
 ```
 
-Os campos `contact` e `message` são opcionais. Quando algum deles não for enviado, a API usará os valores das variáveis `WHATSAPP_TARGET_NAME` e `WHATSAPP_MESSAGE`.
-
-Exemplo usando apenas as variáveis de ambiente:
-
-```json
-{}
-```
+`contact` e `message` sao opcionais se os valores equivalentes estiverem configurados no `.env`.
 
 Resposta de sucesso:
 
 ```json
 {
-  "status": "enviado",
-  "message": "Mensagem enviada com sucesso.",
-  "contact": "Grupo Teste",
-  "elapsedTimeInSeconds": 12.345
+  "success": true,
+  "elapsedTimeInSeconds": 3.21
 }
 ```
 
-## Tratamento de Erros
-
-As respostas de erro seguem o formato:
+Resposta de erro:
 
 ```json
 {
   "error": {
     "code": "DADOS_OBRIGATORIOS_AUSENTES",
-    "message": "Informe 'contact' no corpo da requisição ou configure WHATSAPP_TARGET_NAME no ambiente",
+    "message": "Informe 'contact' no corpo da requisicao ou configure WHATSAPP_TARGET_NAME no ambiente",
     "fields": ["contact"]
   }
 }
 ```
 
-Status HTTP usados:
+Documentacao gerada pelo FastAPI:
 
-- `400`: corpo inválido, campos efetivos ausentes ou contato/grupo não encontrado.
-- `404`: rota não encontrada.
-- `405`: método HTTP não permitido para a rota.
-- `500`: configuração inválida do servidor, timeout de autenticação, falha na automação do Chromium ou erro inesperado.
+- Swagger UI: `http://localhost:8000/docs`
+- ReDoc: `http://localhost:8000/redoc`
+- OpenAPI JSON: `http://localhost:8000/openapi.json`
 
-A API não expõe respostas `422`. Erros de validação do FastAPI são convertidos para `400` e seguem o mesmo formato `error` usado nos demais erros da aplicação.
+## Testes
 
-## Tempo de Resposta
+```bash
+.\.venv\Scripts\python.exe -m pytest -q
+```
 
-O `POST /notifications` responde somente depois que o Playwright finaliza a tentativa de envio. Em autenticações novas, a requisição pode ficar aberta enquanto o QR Code é escaneado.
+Ou, com o ambiente virtual ativado:
 
-A resposta de sucesso inclui `elapsedTimeInSeconds`, medido desde o início do processamento da requisição até a confirmação do envio. Esse tempo inclui a execução do Playwright e eventual espera na fila interna de envio.
+```bash
+pytest -q
+```
 
-A API retorna sucesso depois que o WhatsApp Web confirma visualmente a mensagem como enviada, entregue ou lida. Quando o WhatsApp Web virtualiza a lista e não mantém a nova bolha acessível no DOM, a API aceita como sucesso o campo de composição vazio de forma estável, desde que não exista erro ou pendência visível. Se a mensagem ficar pendente, se houver erro explícito ou se o campo continuar preenchido até o timeout, a API retorna erro `500`.
+## Observacoes Operacionais
 
-A execução do Playwright roda fora do event loop da FastAPI para manter a API responsiva durante o uso do Chromium. Os envios são serializados por processo para evitar disputa pelo mesmo perfil persistente do navegador.
-
-Se publicar a API atrás de proxy, gateway ou load balancer, configure o timeout da chamada HTTP com margem maior que `WHATSAPP_TIMEOUT_SECONDS`.
-
-Use apenas um worker por instância quando o mesmo `WHATSAPP_PROFILE_DIR` for compartilhado.
-
-## Observações
-
-- Na primeira execução será necessário escanear o QR Code.
-- As sessões serão reutilizadas automaticamente pelo perfil persistente.
-- Não apague o diretório definido em `WHATSAPP_PROFILE_DIR` se quiser manter a sessão.
-- Mudanças na interface do WhatsApp Web podem exigir atualização dos seletores do Playwright em `src/app/whatsapp_service.py`.
-- A automação usa WhatsApp Web diretamente no navegador; não usa bibliotecas não oficiais baseadas em engenharia reversa do WhatsApp.
+- O envio e confirmado depois que o WhatsApp Web aceita visualmente a mensagem ou esvazia o compositor sem erro/pedencia visivel.
+- A automacao roda fora do event loop da FastAPI para manter a API responsiva.
+- Os envios sao serializados por processo para evitar disputa pelo mesmo perfil persistente.
+- Use apenas um worker por instancia quando compartilhar o mesmo `WHATSAPP_PROFILE_DIR`.
+- Mudancas na interface do WhatsApp Web podem exigir atualizacao de seletores em `src/pages/pages.py` e `src/whatsapp_service.py`.
+- A automacao usa WhatsApp Web diretamente no navegador; nao usa bibliotecas nao oficiais baseadas em engenharia reversa do WhatsApp.

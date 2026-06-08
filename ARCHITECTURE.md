@@ -1,234 +1,127 @@
 # Arquitetura do WhatsApp Notify
 
-## Visão Geral
+## Visao Geral
 
-A aplicação segue **Clean Architecture** com separação clara de camadas, aplicando **SOLID**, **Repository Pattern**, **Service Layer**, **Dependency Injection** e **Page Object Model (POM)**.
+A aplicacao segue Clean Architecture com separacao clara entre API, aplicacao, dominio e infraestrutura. O envio usa FastAPI na borda HTTP, servicos para orquestracao, modelos/excecoes de dominio e adaptadores concretos para Playwright/WhatsApp Web.
 
-```
-┌─────────────────────────────────────────────────────────┐
-│ Presentation Layer (FastAPI)                            │
-│ main.py - Endpoints HTTP, modelo de requisição/resposta │
-└────────────────────┬────────────────────────────────────┘
-                     │
-┌────────────────────▼────────────────────────────────────┐
-│ Application Layer (Service)                             │
-│ services/__init__.py - Orquestração de negócio          │
-└────────────────────┬────────────────────────────────────┘
-                     │
-┌────────────────────▼────────────────────────────────────┐
-│ Domain Layer                                            │
-│ domain/__init__.py - Modelos e exceções de domínio      │
-└────────────────────┬────────────────────────────────────┘
-                     │
-┌────────────────────▼────────────────────────────────────┐
-│ Infrastructure Layer (Repository & Pages)              │
-│ repositories/__init__.py - Adaptadores concretos        │
-│ pages/__init__.py - Interações com Playwright/UI        │
-│ whatsapp_service.py - Automação base (manter compatível)│
-└─────────────────────────────────────────────────────────┘
+## Camadas
+
+```text
+Presentation  -> src/api/, src/main.py
+Application   -> src/services/
+Domain        -> src/domain/
+Infrastructure-> src/repositories/, src/pages/, src/whatsapp_service.py
 ```
 
-## Estrutura de Diretórios
+## Estrutura Atual
 
-```
-src/app/
-├── __init__.py
-├── config.py                  # Carregamento de variáveis
-├── logger.py                  # Configuração de logging
-├── main.py                    # Endpoints FastAPI (Presentation)
-├── whatsapp_service.py        # Automação base Playwright (mantém compatibilidade)
-│
-├── domain/                    # Domain Layer
-│   └── __init__.py            # Modelos (Notification) e exceções de domínio
-│
-├── repositories/              # Repository Pattern
-│   └── __init__.py            # Interfaces (ABC) e implementações
-│
-├── services/                  # Service Layer
-│   └── __init__.py            # Orquestração de negócio
-│
-└── pages/                     # Page Object Model
-    └── __init__.py            # BasePage, LoginPage, SidebarPage, ConversationPage
+```text
+src/
+|-- api/                         # Rotas, handlers, schemas e OpenAPI
+|-- config.py                    # Configuracao via ambiente
+|-- domain/                      # Modelos e excecoes de dominio
+|-- logger.py                    # Configuracao de logging
+|-- main.py                      # Entry point da aplicacao
+|-- pages/                       # Page Object Model do WhatsApp Web
+|   |-- i_base_page.py           # IBasePage e helpers compartilhados
+|   |-- pages.py                 # LoginPage, SidebarPage, ConversationPage
+|   `-- __init__.py              # Exports publicos
+|-- repositories/                # Interfaces e adaptadores concretos
+|-- services/                    # Orquestracao de negocio
+`-- whatsapp_service.py          # Automacao Playwright base
 ```
 
-## Padrões Implementados
+## Responsabilidades
 
-### 1. Clean Architecture
+- `domain/`: contem regras puras, modelos e excecoes sem dependencia de FastAPI ou Playwright.
+- `services/`: valida e orquestra casos de uso usando interfaces de repositorio.
+- `repositories/`: adapta integracoes externas para as interfaces esperadas pela aplicacao.
+- `pages/`: centraliza seletores e acoes de UI do WhatsApp Web em Page Objects.
+- `api/`: traduz HTTP para chamadas de aplicacao e mapeia erros para respostas.
+- `whatsapp_service.py`: mantem a automacao Playwright existente e compatibilidade operacional.
 
-A arquitetura separa as preocupações em camadas independentes:
+## Padroes
 
-- **Domain**: Lógica pura de negócio, independente de frameworks
-- **Application**: Orquestração (Service Layer)
-- **Infrastructure**: Detalhes de implementação (Playwright, HTTP, persistência)
-- **Presentation**: Interfaces com o mundo exterior (FastAPI)
+### Clean Architecture
 
-Benefício: Mudanças em frameworks (ex: trocar FastAPI por Django) não afetam lógica de domínio.
+As dependencias apontam para dentro: API e infraestrutura dependem da aplicacao/dominio, mas dominio nao conhece frameworks ou Playwright.
 
-### 2. SOLID
+### Repository Pattern
 
-- **S (Single Responsibility)**: Cada classe tem uma única responsabilidade
-  - `NotificationService`: orquestra envio
-  - `PlaywrightNotificationRepository`: implementa envio via Playwright
-  - `LoginPage`, `SidebarPage`, `ConversationPage`: gerenciam interações específicas com UI
+`INotificationRepository` define a operacao de envio. `PlaywrightNotificationRepository` implementa essa porta usando WhatsApp Web e converte erros da automacao para erros de dominio.
 
-- **O (Open/Closed)**: Classes abertas para extensão, fechadas para modificação
-  - Novos repositórios (ex: `TwilioRepository`) podem ser criados sem alterar `NotificationService`
+### Service Layer
 
-- **L (Liskov Substitution)**: Implementações de interfaces são intercambiáveis
-  - `PlaywrightNotificationRepository` implementa `NotificationRepository`
-  - Qualquer nova implementação pode substituir sem quebrar o serviço
+`NotificationService` concentra o fluxo de negocio: cria/valida `Notification`, registra eventos relevantes e delega o envio ao repositorio.
 
-- **I (Interface Segregation)**: Clientes dependem de interfaces mínimas
-  - `NotificationRepository` oferece apenas `send(target_name, message)`
+### Dependency Injection
 
-- **D (Dependency Inversion)**: Código de alto nível depende de abstrações
-  - `NotificationService` depende de `NotificationRepository`, não de `PlaywrightNotificationRepository`
+Repositorios e logger sao injetados nos servicos. Isso permite testar a regra de negocio com mocks e trocar a implementacao de envio sem alterar a camada de aplicacao.
 
-### 3. Repository Pattern
+### Page Object Model
 
-Encapsula o acesso a dados/integrações atrás de uma interface.
+`pages/pages.py` contem Page Objects pequenos e focados:
 
 ```python
-# Interface abstrata
-class NotificationRepository(ABC):
-    @abstractmethod
-    def send(self, target_name: str, message: str) -> None:
-        raise NotImplementedError
-
-# Implementação concreta (adaptador Playwright)
-class PlaywrightNotificationRepository(NotificationRepository):
-    def send(self, target_name: str, message: str) -> None:
-        # Lógica Playwright aqui
-```
-
-Benefício: Trocar Playwright por outra biblioteca requer apenas nova implementação de `NotificationRepository`.
-
-### 4. Service Layer
-
-Concentra lógica de negócio sem conhecer detalhes de implementação.
-
-```python
-class NotificationService:
-    def __init__(self, repository: NotificationRepository, logger):
-        self.repository = repository
-    
-    def send(self, target_name: str, message: str) -> None:
-        # Valida domínio (Notification)
-        notification = Notification(target_name, message)
-        # Delega ao repositório
-        self.repository.send(notification.target_name, notification.message)
-```
-
-Benefício: Lógica de validação, logging e tratamento de erros centralizados.
-
-### 5. Dependency Injection (DI)
-
-Dependências são injetadas em vez de criadas internamente.
-
-```python
-# Em main.py (Presentation)
-def _send_message(config: AppConfig) -> None:
-    # Cria repositório
-    repository = PlaywrightNotificationRepository(config, logger)
-    # Injeta repositório no serviço
-    service = NotificationService(repository, logger)
-    # Usa o serviço
-    service.send(config.target_name, config.message)
-```
-
-Benefício: Fácil de testar (mockar `NotificationRepository`), fácil trocar implementações.
-
-### 6. Page Object Model (POM)
-
-Encapsula seletores e ações de cada "página" do WhatsApp Web.
-
-```python
-class LoginPage(BasePage):
-    _authenticated_selectors = (...)
-    _qr_code_selectors = (...)
-    
+class LoginPage(IBasePage):
     def is_authenticated(self) -> bool: ...
     def has_qr_code(self) -> bool: ...
     def capture_qr_code(self) -> bytes | None: ...
 
-class SidebarPage(BasePage):
-    def search_contact(self, name: str) -> None: ...
-    def find_contact_result(self, name: str) -> Locator | None: ...
+class SidebarPage(IBasePage):
+    def search_contact(self, contact_name: str) -> None: ...
+    def find_contact_result(self, target_name: str) -> Locator | None: ...
+    def click_contact(self, locator: Locator) -> None: ...
 
-class ConversationPage(BasePage):
-    def fill_message(self, text: str) -> bool: ...
+class ConversationPage(IBasePage):
+    def find_message_box(self) -> Locator | None: ...
+    def fill_message(self, message: str) -> bool: ...
     def send_message(self) -> None: ...
 ```
 
-Benefício: Seletores centralizados por página; fácil manutenção quando WhatsApp alterar UI.
+Seletores devem ficar nos Page Objects ou na automacao Playwright, nunca nas camadas de dominio ou servico.
 
-## Fluxo de Execução
+## Fluxo de Execucao
 
-1. **Cliente HTTP** faz POST para `/notifications`
-2. **FastAPI** (main.py) valida corpus, carrega config
-3. **main.py** cria `PlaywrightNotificationRepository` → injeta em `NotificationService`
-4. **NotificationService**  valida domínio (cria `Notification`)  → chama `repository.send()`
-5. **PlaywrightNotificationRepository.send()** instancia `WhatsAppService`
-6. **WhatsAppService** usa POMs (`LoginPage`, `SidebarPage`, `ConversationPage`) para interagir com UI
-7. Exceções mapeadas: `AuthenticationError` → `AUTENTICACAO_EXPIRADA`, etc.
-8. Resposta retorna ao cliente
+1. Cliente chama `POST /notifications`.
+2. A API valida payload e carrega configuracao.
+3. A factory cria `PlaywrightNotificationRepository`.
+4. `NotificationService` valida o dominio e chama `repository.send()`.
+5. `PlaywrightNotificationRepository` instancia `WhatsAppService`.
+6. `WhatsAppService` executa a automacao no WhatsApp Web.
+7. Erros de automacao sao convertidos para erros de dominio/API.
+8. A API retorna sucesso ou erro estruturado.
 
-## Mapeamento de Exceções
+## Mapeamento de Erros
 
-| Domain | HTTP | Code |
-|--------|------|------|
+| Erro de dominio | HTTP | Codigo |
+| --- | --- | --- |
 | `AuthenticationError` | 500 | `AUTENTICACAO_EXPIRADA` |
 | `TargetNotFoundError` | 400 | `DESTINO_NAO_ENCONTRADO` |
 | `SendError` | 500 | `FALHA_NO_ENVIO` |
-| `DomainError` (genérica) | 500 | `FALHA_NA_AUTOMACAO` |
-| Outra exceção | 500 | `ERRO_INTERNO` |
+| `DomainError` | 500 | `FALHA_NA_AUTOMACAO` |
+| erro inesperado | 500 | `ERRO_INTERNO` |
 
 ## Como Estender
 
-### Adicionar novo repositório (ex: Twilio)
+### Novo repositorio
 
-1. Crie `repositories/twilio_repository.py`
-2. Implemente `NotificationRepository`
-3. Em `main.py`, crie uma factory ou use variável de ambiente para escolher qual repository usar
+1. Crie um arquivo em `src/repositories/`.
+2. Implemente `INotificationRepository`.
+3. Ajuste a factory da API para selecionar a implementacao.
+4. Teste usando mocks da interface.
 
-### Adicionar nova página (ex: StatusPage)
+### Nova pagina POM
 
-1. Crie classe que estenda `BasePage` em `pages/__init__.py`
-2. Defina seletores específicos
-3. Implemente métodos de interação
-4. Use em `WhatsAppService`
+1. Adicione a classe em `src/pages/pages.py` estendendo `IBasePage`.
+2. Declare seletores como atributos privados da classe.
+3. Exponha metodos com acoes de alto nivel, sem vazar seletores.
+4. Exporte a classe em `src/pages/__init__.py`.
+5. Use a classe na automacao quando necessario.
 
-### Teste unitário
+## Regras de Manutencao
 
-```python
-from unittest.mock import Mock
-from services import NotificationService
-from domain import TargetNotFoundError
-
-
-def test_send_notifies_when_target_not_found():
-    repo = Mock()
-    repo.send.side_effect = TargetNotFoundError("Not found")
-    service = NotificationService(repo, logger)
-
-    with pytest.raises(TargetNotFoundError):
-        service.send("Unknown", "Test")
-
-    repo.send.assert_called_once_with("Unknown", "Test")
-```
-
-## Próximas Melhorias
-
-1. **Dependency Injector**: Usar `dependency-injector` para gerenciar DI automaticamente
-2. **Camada de Testes**: Testes unitários e de integração
-3. **Logging Estruturado**: Integrar com `structlog` para melhor rastreamento
-4. **Eventos de Domínio**: Implementar pattern de eventos para notificações assíncronas
-5. **Use Cases**: Extrair `SendNotificationUseCase` se houver múltiplos fluxos
-
-## Referências
-
-- Clean Architecture: https://blog.cleancoder.com/uncle-bob/2012/08/13/the-clean-architecture.html
-- SOLID: https://en.wikipedia.org/wiki/SOLID
-- Repository Pattern: https://martinfowler.com/eaaCatalog/repository.html
-- Dependency Injection: https://en.wikipedia.org/wiki/Dependency_injection
-
+- Nao coloque regra de negocio em Page Objects.
+- Nao coloque seletor de Playwright em `domain/` ou `services/`.
+- Prefira mensagens de erro de dominio nas camadas internas e mapeamento HTTP apenas em `api/`.
+- Mantenha seletores alternativos quando o WhatsApp Web variar entre idiomas ou versoes.
