@@ -1,6 +1,6 @@
 from types import SimpleNamespace
 
-from api.server import _http_error_code_and_message, _validation_error_fields
+from api.exception_handlers import _http_error_code_and_message, _validation_error_fields
 from starlette import status
 
 

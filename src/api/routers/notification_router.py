@@ -6,8 +6,7 @@ from fastapi import APIRouter, Body
 
 from api.handlers.notification_handler import notification_handler
 from api.openapi import BAD_REQUEST_EXAMPLES, INTERNAL_SERVER_ERROR_EXAMPLES
-from api.schemas.error_schema import ErrorResponse
-from api.schemas.notification_schema import NotificationRequest, NotificationResponse
+from api.schemas import ErrorResponse, NotificationRequest, NotificationResponse
 
 
 router = APIRouter(prefix="/notifications", tags=["notifications"])

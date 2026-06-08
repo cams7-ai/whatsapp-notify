@@ -14,7 +14,7 @@ from api.exception_handlers import (
 )
 from api.exceptions import ApiError
 from api.openapi import OPENAPI_TAGS
-from api.routers.notification_router import router as notification_router
+from api.routers import notification_router
 
 
 app = FastAPI(
