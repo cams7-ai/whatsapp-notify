@@ -10,11 +10,11 @@ from fastapi.concurrency import run_in_threadpool
 from fastapi.exceptions import RequestValidationError
 from fastapi.openapi.utils import get_openapi
 from fastapi.responses import JSONResponse
-from pydantic import BaseModel, ConfigDict, Field
 from starlette.exceptions import HTTPException as StarletteHTTPException
-
 from config import AppConfig, ConfigError, MissingRequiredValueError, load_config
 from logger import configure_logger
+from api.schemas.error_schema import ErrorResponse
+from api.schemas.notification_schema import NotificationRequest, NotificationResponse
 from repositories import NotificationRepository, PlaywrightNotificationRepository
 from services import NotificationService
 from domain import (
@@ -134,85 +134,6 @@ app = FastAPI(
     openapi_url="/openapi.json",
     openapi_tags=OPENAPI_TAGS,
 )
-
-
-class NotificationRequest(BaseModel):
-    """Corpo opcional para sobrescrever o destino e a mensagem do ambiente."""
-
-    model_config = ConfigDict(
-        extra="forbid",
-        json_schema_extra={
-            "examples": [
-                {
-                    "contact": "Grupo Teste",
-                    "message": "Mensagem enviada pela API",
-                },
-                {},
-            ]
-        },
-    )
-
-    target_name: str | None = Field(
-        default=None,
-        alias="contact",
-        description="Nome exato do contato individual ou grupo.",
-    )
-    message: str | None = Field(
-        default=None,
-        description="Mensagem que será enviada pelo WhatsApp Web.",
-    )
-
-
-class NotificationResponse(BaseModel):
-    model_config = ConfigDict(
-        populate_by_name=True,
-        json_schema_extra={
-            "examples": [
-                {
-                    "status": "enviado",
-                    "message": "Mensagem enviada com sucesso.",
-                    "contact": "Grupo Teste",
-                    "elapsedTimeInSeconds": 12.345,
-                }
-            ]
-        },
-    )
-
-    status: str
-    message: str
-    target_name: str = Field(alias="contact")
-    elapsed_seconds: float = Field(
-        alias="elapsedTimeInSeconds",
-        description="Tempo total decorrido, em segundos, até confirmar o envio.",
-    )
-
-
-class ErrorDetail(BaseModel):
-    code: str
-    message: str
-    fields: list[str] | None = None
-
-
-class ErrorResponse(BaseModel):
-    model_config = ConfigDict(
-        json_schema_extra={
-            "examples": [
-                {
-                    "error": {
-                        "code": "DADOS_OBRIGATORIOS_AUSENTES",
-                        "message": (
-                            "Informe 'contact' no corpo da requisição ou configure "
-                            "WHATSAPP_TARGET_NAME no ambiente"
-                        ),
-                        "fields": ["contact"],
-                    }
-                }
-            ]
-        }
-    )
-
-    error: ErrorDetail
-
 
 class ApiError(Exception):
     def __init__(
