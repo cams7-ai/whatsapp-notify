@@ -1,0 +1,100 @@
+"""Metadados OpenAPI expostos pela camada HTTP."""
+
+from __future__ import annotations
+
+OPENAPI_TAGS = [
+    {
+        "name": "notifications",
+        "description": (
+            "Envio de mensagens pelo WhatsApp Web usando os dados da requisição "
+            "ou as variáveis de ambiente como fallback."
+        ),
+    },
+]
+
+BAD_REQUEST_EXAMPLES = {
+    "invalidRequest": {
+        "summary": "Corpo inválido",
+        "value": {
+            "error": {
+                "code": "REQUISICAO_INVALIDA",
+                "message": (
+                    "Corpo da requisição inválido. Envie um JSON com os campos "
+                    "opcionais 'contact' e 'message'."
+                ),
+                "fields": ["message"],
+            }
+        },
+    },
+    "missingRequiredValue": {
+        "summary": "Campo efetivo ausente",
+        "value": {
+            "error": {
+                "code": "DADOS_OBRIGATORIOS_AUSENTES",
+                "message": (
+                    "Informe 'contact' no corpo da requisição ou configure "
+                    "WHATSAPP_TARGET_NAME no ambiente"
+                ),
+                "fields": ["contact"],
+            }
+        },
+    },
+    "contactNotFound": {
+        "summary": "Contato ou grupo não encontrado",
+        "value": {
+            "error": {
+                "code": "DESTINO_NAO_ENCONTRADO",
+                "message": "Contato ou grupo não encontrado: Grupo Teste",
+                "fields": ["contact"],
+            }
+        },
+    },
+}
+
+INTERNAL_SERVER_ERROR_EXAMPLES = {
+    "invalidConfiguration": {
+        "summary": "Configuração inválida",
+        "value": {
+            "error": {
+                "code": "CONFIGURACAO_INVALIDA",
+                "message": (
+                    "Configuração inválida do servidor: Valor inválido para "
+                    "WHATSAPP_TIMEOUT_SECONDS: informe um número inteiro"
+                ),
+            }
+        },
+    },
+    "authenticationExpired": {
+        "summary": "Timeout de autenticação",
+        "value": {
+            "error": {
+                "code": "AUTENTICACAO_EXPIRADA",
+                "message": (
+                    "Autenticação não concluída em 60 segundos. Escaneie o QR Code "
+                    "do WhatsApp Web no navegador aberto e tente novamente."
+                ),
+            }
+        },
+    },
+    "sendFailure": {
+        "summary": "Falha no envio",
+        "value": {
+            "error": {
+                "code": "FALHA_NO_ENVIO",
+                "message": (
+                    "Não foi possível confirmar o envio da mensagem: Mensagem não "
+                    "foi confirmada pelo WhatsApp Web. Status detectado: pendente."
+                ),
+            }
+        },
+    },
+    "internalError": {
+        "summary": "Erro inesperado",
+        "value": {
+            "error": {
+                "code": "ERRO_INTERNO",
+                "message": "Erro inesperado ao processar a requisição.",
+            }
+        },
+    },
+}
