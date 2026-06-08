@@ -14,8 +14,8 @@ from api.schemas.notification_schema import NotificationRequest, NotificationRes
 from config import AppConfig, ConfigError, MissingRequiredValueError, load_config
 from domain import AuthenticationError, DomainError, SendError, TargetNotFoundError
 from logger import configure_logger
-from repositories import NotificationRepository, PlaywrightNotificationRepository
-from services import NotificationService
+from repositories import INotificationRepository, PlaywrightNotificationRepository
+from services import INotificationService, NotificationService
 
 
 class NotificationHandler:
@@ -97,11 +97,11 @@ class NotificationHandler:
             ) from exc
 
     def _send_message(self, config: AppConfig) -> None:
-        repository: NotificationRepository = PlaywrightNotificationRepository(
+        repository: INotificationRepository = PlaywrightNotificationRepository(
             config=config,
             logger=self.logger,
         )
-        service = NotificationService(repository=repository, logger=self.logger)
+        service: INotificationService = NotificationService(repository=repository, logger=self.logger)
         service.send(target_name=config.target_name, message=config.message)
 
 

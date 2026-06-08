@@ -60,10 +60,10 @@ def test_service_sends_notification(self):
 1. Crie `src/app/repositories/twilio_repository.py`:
 
 ```python
-from repositories import NotificationRepository
+from repositories import INotificationRepository
 
 
-class TwilioNotificationRepository(NotificationRepository):
+class TwilioNotificationRepository(INotificationRepository):
     def __init__(self, config, logger):
         self.config = config
         self.logger = logger

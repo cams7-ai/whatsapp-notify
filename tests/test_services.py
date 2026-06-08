@@ -6,7 +6,7 @@ Demonstra como a arquitetura Clean + DI facilita testes isolados.
 import pytest
 from unittest.mock import Mock
 
-from services import NotificationService
+from services import INotificationService, NotificationService
 from domain import (
     Notification,
     AuthenticationError,
@@ -37,51 +37,51 @@ class TestNotificationService:
             logger=mock_logger,
         )
 
-    def test_send_calls_repository_with_valid_notification(self, service, mock_repository):
+    def test_send_calls_repository_with_valid_notification(self, service: INotificationService, mock_repository):
         """Testa que o serviço delega corretamente ao repositório."""
         service.send(target_name="Grupo Teste", message="Olá")
 
         mock_repository.send.assert_called_once_with("Grupo Teste", "Olá")
 
-    def test_send_raises_authentication_error_from_repository(self, service, mock_repository):
+    def test_send_raises_authentication_error_from_repository(self, service: INotificationService, mock_repository):
         """Testa que AuthenticationError do repositório é propagada."""
         mock_repository.send.side_effect = AuthenticationError("Timeout")
 
         with pytest.raises(AuthenticationError, match="Timeout"):
             service.send("Grupo", "Msg")
 
-    def test_send_raises_target_not_found_error(self, service, mock_repository):
+    def test_send_raises_target_not_found_error(self, service: INotificationService, mock_repository):
         """Testa que TargetNotFoundError é propagada."""
         mock_repository.send.side_effect = TargetNotFoundError("Not found")
 
         with pytest.raises(TargetNotFoundError, match="Not found"):
             service.send("Desconhecido", "Msg")
 
-    def test_send_raises_send_error_from_repository(self, service, mock_repository):
+    def test_send_raises_send_error_from_repository(self, service: INotificationService, mock_repository):
         """Testa que SendError do repositório é propagada."""
         mock_repository.send.side_effect = SendError("Failed")
 
         with pytest.raises(SendError, match="Failed"):
             service.send("Grupo", "Msg")
 
-    def test_send_raises_domain_error_on_invalid_notification(self, service, mock_repository):
+    def test_send_raises_domain_error_on_invalid_notification(self, service: INotificationService, mock_repository):
         """Testa que notificação inválida (target_name vazio) lança erro de domínio."""
         with pytest.raises(DomainError, match="não pode estar vazio"):
             service.send(target_name="", message="Valid message")
 
-    def test_send_raises_domain_error_on_empty_message(self, service, mock_repository):
+    def test_send_raises_domain_error_on_empty_message(self, service: INotificationService, mock_repository):
         """Testa que mensagem vazia lança erro de domínio."""
         with pytest.raises(DomainError, match="não pode estar vizio"):
             service.send(target_name="Valid", message="")
 
-    def test_send_logs_info_on_success(self, service, mock_repository, mock_logger):
+    def test_send_logs_info_on_success(self, service: INotificationService, mock_repository, mock_logger):
         """Testa que sucesso é registrado no logger."""
         service.send("Grupo Teste", "Olá mundo")
 
         # Verifica que logger.info foi chamado ao menos uma vez
         assert mock_logger.info.call_count >= 1
 
-    def test_send_wraps_unexpected_exception(self, service, mock_repository):
+    def test_send_wraps_unexpected_exception(self, service: INotificationService, mock_repository):
         """Testa que exceção inesperada é envelopada em DomainError."""
         mock_repository.send.side_effect = RuntimeError("Unexpected!")
 

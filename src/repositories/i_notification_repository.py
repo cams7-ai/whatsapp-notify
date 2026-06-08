@@ -1,7 +1,7 @@
 from __future__ import annotations
 from abc import ABC, abstractmethod
 
-class NotificationRepository(ABC):
+class INotificationRepository(ABC):
     """Interface para enviador de notificações.
 
     Qualquer implementação de envio deve respeitar este contrato.
@@ -16,4 +16,4 @@ class NotificationRepository(ABC):
             TargetNotFoundError: se contato/grupo não existir
             SendError: se falhar ao enviar
         """
-        raise NotImplementedError
+        ...  # pragma: no cover

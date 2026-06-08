@@ -1,8 +1,8 @@
 import logging
-from repositories.interfaces.notification_repository import NotificationRepository
+from repositories.i_notification_repository import INotificationRepository
 from config import AppConfig
 
-class PlaywrightNotificationRepository(NotificationRepository):
+class PlaywrightNotificationRepository(INotificationRepository):
     """Implementação do repositório usando Playwright + WhatsApp Web.
 
     Adapta a automação existente (WhatsAppService) para a ‘interface’
