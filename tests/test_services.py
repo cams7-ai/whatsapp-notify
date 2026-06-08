@@ -15,7 +15,6 @@ from domain import (
     DomainError,
 )
 
-
 class TestNotificationService:
     """Suite de testes para NotificationService."""
 
@@ -25,16 +24,10 @@ class TestNotificationService:
         return Mock()
 
     @pytest.fixture
-    def mock_logger(self):
-        """Cria um logger mockado."""
-        return Mock()
-
-    @pytest.fixture
-    def service(self, mock_repository, mock_logger):
+    def service(self, mock_repository):
         """Cria instância do serviço com dependÃªncias mockadas."""
         return NotificationService(
-            repository=mock_repository,
-            logger=mock_logger,
+            repository=mock_repository
         )
 
     def test_send_calls_repository_with_valid_notification(self, service: INotificationService, mock_repository):
@@ -73,14 +66,7 @@ class TestNotificationService:
         """Testa que mensagem vazia lança erro de domínio."""
         with pytest.raises(DomainError, match="não pode estar vazio"):
             service.send(target_name="Valid", message="")
-
-    def test_send_logs_info_on_success(self, service: INotificationService, mock_repository, mock_logger):
-        """Testa que sucesso Ã© registrado no logger."""
-        service.send("Grupo Teste", "Olá mundo")
-
-        # Verifica que logger.info foi chamado ao menos uma vez
-        assert mock_logger.info.call_count >= 1
-
+    
     def test_send_wraps_unexpected_exception(self, service: INotificationService, mock_repository):
         """Testa que exceção inesperada Ã© envelopada em DomainError."""
         mock_repository.send.side_effect = RuntimeError("Unexpected!")

@@ -1,12 +1,9 @@
-﻿import logging
-
-import pytest
+﻿import pytest
 
 from api.exceptions import ApiError
 from api.handlers.notification_handler import NotificationHandler
 from api.schemas.notification_schema import NotificationRequest
 from domain import SendError, SessionAlreadyOpenError, SessionClosedError
-
 
 class FakeSessionService:
     def __init__(self):
@@ -50,7 +47,6 @@ def session_service():
 @pytest.fixture
 def handler(session_service):
     return NotificationHandler(
-        logger=logging.getLogger("test-handler"),
         session_service=session_service,
     )
 

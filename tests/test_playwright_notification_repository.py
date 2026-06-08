@@ -1,10 +1,8 @@
 import pytest
-import logging
 
 from repositories import PlaywrightNotificationRepository
 from config import AppConfig
 import domain
-
 
 def test_playwright_repository_maps_authentication_error(monkeypatch, tmp_path):
     # Arrange
@@ -15,7 +13,6 @@ def test_playwright_repository_maps_authentication_error(monkeypatch, tmp_path):
         profile_dir=tmp_path,
         timeout_seconds=1,
     )
-    logger = logging.getLogger("test")
 
     # Monkeypatch WhatsAppService and exception names in whatsapp_service
     import whatsapp_service as ws_mod
@@ -24,9 +21,8 @@ def test_playwright_repository_maps_authentication_error(monkeypatch, tmp_path):
         pass
 
     class DummyService2:
-        def __init__(self, config, logger):
+        def __init__(self, config):
             self.config = config
-            self.logger = logger
 
         def run(self):
             raise ws_mod.AuthenticationTimeoutError("timeout")
@@ -35,7 +31,7 @@ def test_playwright_repository_maps_authentication_error(monkeypatch, tmp_path):
     monkeypatch.setattr(ws_mod, 'AuthenticationTimeoutError', DummyAuthExc)
 
     # Also ensure repository imports pick up when called
-    repo = PlaywrightNotificationRepository(config=cfg, logger=logger)
+    repo = PlaywrightNotificationRepository(config=cfg)
 
     # Act / Assert
     with pytest.raises(domain.AuthenticationError):
@@ -44,7 +40,7 @@ def test_playwright_repository_maps_authentication_error(monkeypatch, tmp_path):
 
 def test_playwright_repository_maps_target_not_found(monkeypatch, tmp_path):
     class Service2:
-        def __init__(self, config, logger):
+        def __init__(self, config):
             pass
 
         def run(self):
@@ -57,14 +53,13 @@ def test_playwright_repository_maps_target_not_found(monkeypatch, tmp_path):
         profile_dir=tmp_path,
         timeout_seconds=1,
     )
-    logger = logging.getLogger("test")
 
     import whatsapp_service as ws_mod
 
     monkeypatch.setattr(ws_mod, 'WhatsAppService', Service2)
     monkeypatch.setattr(ws_mod, 'TargetNotFoundError', Exception)
 
-    repo = PlaywrightNotificationRepository(config=cfg, logger=logger)
+    repo = PlaywrightNotificationRepository(config=cfg)
 
     with pytest.raises(domain.TargetNotFoundError):
         repo.send("x", "y")

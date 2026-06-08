@@ -22,18 +22,17 @@ from domain import (
     SessionStopError,
     TargetNotFoundError,
 )
-from logger import configure_logger
 from repositories import INotificationRepository, PlaywrightNotificationRepository
 from services import INotificationService, NotificationService, WhatsAppSessionService
 
+logger = logging.getLogger(__name__)
 
 class NotificationHandler:
     """Adapta requisições HTTP para os fluxos de aplicação do WhatsApp."""
 
-    def __init__(self, logger: logging.Logger, session_service: WhatsAppSessionService | None = None) -> None:
-        self.logger = logger
+    def __init__(self, session_service: WhatsAppSessionService | None = None) -> None:
         self._operation_lock = asyncio.Lock()
-        self._session_service = session_service or WhatsAppSessionService(logger=logger)
+        self._session_service = session_service or WhatsAppSessionService()
 
     async def start_session(self, headless: bool | None = None) -> SessionResponse:
         config = self._load_session_config(headless=headless)
@@ -54,7 +53,7 @@ class NotificationHandler:
         request_payload = payload or NotificationRequest()
         config = self._load_request_config(request_payload)
 
-        self.logger.info("Requisição recebida para envio em sessão aberta: %s", config.target_name)
+        logger.info("Requisição recebida para envio em sessão aberta: %s", config.target_name)
 
         try:
             async with self._operation_lock:
@@ -81,7 +80,7 @@ class NotificationHandler:
         request_payload = payload or NotificationRequest()
         config = self._load_request_config(request_payload)
 
-        self.logger.info("Requisição recebida para envio ao destino: %s", config.target_name)
+        logger.info("Requisição recebida para envio ao destino: %s", config.target_name)
 
         try:
             async with self._operation_lock:
@@ -128,11 +127,8 @@ class NotificationHandler:
             ) from exc
 
     def _send_message_and_close(self, config: AppConfig) -> None:
-        repository: INotificationRepository = PlaywrightNotificationRepository(
-            config=config,
-            logger=self.logger,
-        )
-        service: INotificationService = NotificationService(repository=repository, logger=self.logger)
+        repository: INotificationRepository = PlaywrightNotificationRepository(config=config)
+        service: INotificationService = NotificationService(repository=repository)
         service.send(target_name=config.target_name, message=config.message)
 
     @staticmethod
@@ -200,7 +196,7 @@ class NotificationHandler:
                 message=f"Falha na automação do WhatsApp Web: {exc}",
             ) from exc
 
-        self.logger.exception("Erro inesperado ao processar requisição")
+        logger.exception("Erro inesperado ao processar requisição")
         raise ApiError(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
             code="ERRO_INTERNO",
@@ -208,4 +204,4 @@ class NotificationHandler:
         ) from exc
 
 
-notification_handler = NotificationHandler(logger=configure_logger())
+notification_handler = NotificationHandler()

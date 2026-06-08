@@ -5,6 +5,8 @@ from domain import Notification, DomainError
 from repositories import INotificationRepository
 from services.i_notification_service import INotificationService
 
+logger = logging.getLogger(__name__)
+
 class NotificationService(INotificationService):
     """Serviço para envio de notificações.
 
@@ -14,11 +16,9 @@ class NotificationService(INotificationService):
 
     def __init__(
         self,
-        repository: INotificationRepository,
-        logger: logging.Logger,
+        repository: INotificationRepository
     ) -> None:
         self.repository = repository
-        self.logger = logger
 
     def send(self, target_name: str, message: str) -> None:
         """Envia uma notificação validada e rastreada.
@@ -36,7 +36,7 @@ class NotificationService(INotificationService):
         except ValueError as e:
             raise DomainError(f"Notificação inválida: {e}") from e
 
-        self.logger.info(
+        logger.info(
             "Enviando notificação para %s: %s",
             notification.target_name,
             notification.message[:50],  # log dos primeiros 50 chars
@@ -50,8 +50,8 @@ class NotificationService(INotificationService):
             raise
         except Exception as e:
             # Converte exceções inesperadas em erro de domínio
-            self.logger.exception("Erro inesperado ao enviar notificação")
+            logger.exception("Erro inesperado ao enviar notificação")
             raise DomainError(f"Erro ao enviar notificação: {e}") from e
 
-        self.logger.info("Notificação enviada com sucesso para %s", target_name)
+        logger.info("Notificação enviada com sucesso para %s", target_name)
 

@@ -25,12 +25,12 @@ from whatsapp_service import (
     WhatsAppNotifyError,
 )
 
+logger = logging.getLogger(__name__)
 
 class WhatsAppSessionService:
     """Orquestra uma sessão persistente sem expor Playwright para a camada HTTP."""
 
-    def __init__(self, logger: logging.Logger) -> None:
-        self.logger = logger
+    def __init__(self) -> None:
         self._session: PersistentWhatsAppSession | None = None
 
     @property
@@ -41,7 +41,7 @@ class WhatsAppSessionService:
         if self.is_open:
             raise SessionAlreadyOpenError("Já existe uma sessão do WhatsApp Web aberta.")
 
-        session = PersistentWhatsAppSession(config=config, logger=self.logger)
+        session = PersistentWhatsAppSession(config=config)
         try:
             session.start()
         except PlaywrightSessionAlreadyOpenError as exc:
@@ -51,7 +51,7 @@ class WhatsAppSessionService:
         except WhatsAppNotifyError as exc:
             raise SessionStartError(f"Não foi possível abrir a sessão do WhatsApp Web: {exc}") from exc
         except Exception as exc:
-            self.logger.exception("Erro inesperado ao iniciar sessão do WhatsApp Web")
+            logger.exception("Erro inesperado ao iniciar sessão do WhatsApp Web")
             raise SessionStartError("Não foi possível abrir a sessão do WhatsApp Web.") from exc
 
         self._session = session
@@ -87,7 +87,7 @@ class WhatsAppSessionService:
         except SessionCloseError as exc:
             raise SessionStopError(str(exc)) from exc
         except Exception as exc:
-            self.logger.exception("Erro inesperado ao fechar sessão do WhatsApp Web")
+            logger.exception("Erro inesperado ao fechar sessão do WhatsApp Web")
             raise SessionStopError("Não foi possível fechar a sessão do WhatsApp Web.") from exc
         finally:
             if not session.is_open:

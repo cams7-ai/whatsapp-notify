@@ -1,6 +1,4 @@
-﻿import logging
-
-import pytest
+﻿import pytest
 
 from config import AppConfig
 from domain import (
@@ -16,15 +14,13 @@ from services.whatsapp_session_service import WhatsAppSessionService
 import services.whatsapp_session_service as session_module
 import whatsapp_service as ws_mod
 
-
 class FakePersistentSession:
     start_error = None
     send_error = None
     stop_error = None
 
-    def __init__(self, config, logger):
+    def __init__(self, config):
         self.config = config
-        self.logger = logger
         self.is_open = False
         self.sent = []
 
@@ -65,7 +61,7 @@ def config(tmp_path):
 
 @pytest.fixture
 def service():
-    return WhatsAppSessionService(logger=logging.getLogger("test-session"))
+    return WhatsAppSessionService()
 
 
 def test_start_opens_persistent_session(service, config):

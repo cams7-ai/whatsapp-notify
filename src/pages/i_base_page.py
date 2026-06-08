@@ -3,14 +3,12 @@ from abc import ABC
 import re
 import time
 from playwright.sync_api import Page, Error as PlaywrightError, Locator
-import logging
 
 class IBasePage(ABC):
     """Base para todos os POMs do WhatsApp Web."""
 
-    def __init__(self, page: Page, logger: logging.Logger) -> None:
+    def __init__(self, page: Page) -> None:
         self.page = page
-        self.logger = logger
 
     @staticmethod
     def _normalize_text(value: str) -> str:

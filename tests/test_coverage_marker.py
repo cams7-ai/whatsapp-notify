@@ -1,6 +1,5 @@
 ﻿from pathlib import Path
 
-
 def test_mark_all_source_lines_executed():
     base = Path(__file__).resolve().parents[1] / "src"
     for path in sorted(base.rglob("*.py")):

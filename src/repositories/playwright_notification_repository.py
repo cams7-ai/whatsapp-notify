@@ -1,15 +1,11 @@
-﻿import logging
-
-from config import AppConfig
+﻿from config import AppConfig
 from repositories.i_notification_repository import INotificationRepository
-
 
 class PlaywrightNotificationRepository(INotificationRepository):
     """Implementação do repositório usando Playwright e WhatsApp Web."""
 
-    def __init__(self, config: AppConfig, logger: logging.Logger) -> None:
+    def __init__(self, config: AppConfig) -> None:
         self.config = config
-        self.logger = logger
 
     def send(self, target_name: str, message: str) -> None:
         """Envia mensagem via WhatsApp Web com Playwright."""
@@ -35,7 +31,7 @@ class PlaywrightNotificationRepository(INotificationRepository):
         )
 
         try:
-            service = WhatsAppService(config=modified_config, logger=self.logger)
+            service = WhatsAppService(config=modified_config)
             service.run()
         except AuthenticationTimeoutError as exc:
             raise AuthenticationError(str(exc)) from exc

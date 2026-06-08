@@ -1,18 +1,14 @@
 ﻿"""Tratamento centralizado de erros HTTP."""
 
-from __future__ import annotations
-
+import logging
 from fastapi import Request, status
 from fastapi.exceptions import RequestValidationError
 from starlette.exceptions import HTTPException as StarletteHTTPException
 
 from api.exceptions import ApiError
 from api.responses import Utf8JSONResponse
-from logger import configure_logger
 
-
-logger = configure_logger()
-
+logger = logging.getLogger(__name__)
 
 async def api_error_handler(_: Request, exc: ApiError) -> Utf8JSONResponse:
     return _error_response(
