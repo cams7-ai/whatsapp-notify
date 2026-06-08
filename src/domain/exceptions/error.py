@@ -5,10 +5,6 @@ class DomainError(RuntimeError):
     """Excecao base para erros de dominio."""
 
 
-class NotificationError(DomainError):
-    """Excecao para erros gerais no processamento de notificacoes."""
-
-
 class AuthenticationError(DomainError):
     """Excecao quando a autenticacao falha ou expira."""
 

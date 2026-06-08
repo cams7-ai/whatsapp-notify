@@ -12,7 +12,7 @@ O projeto segue Clean Architecture com separacao entre API, aplicacao, dominio e
 Presentation  -> src/api/, src/main.py
 Application   -> src/services/
 Domain        -> src/domain/
-Infrastructure-> src/repositories/, src/pages/, src/whatsapp_service.py
+Infrastructure-> src/whatsapp_service.py
 ```
 
 Detalhes completos ficam em [ARCHITECTURE.md](./ARCHITECTURE.md).
@@ -165,7 +165,7 @@ Documentacao gerada pelo FastAPI:
 .\.venv\Scripts\python.exe -m pytest --cov=src --cov-report=term-missing -q
 ```
 
-A cobertura esperada e 100%. Os testes nunca devem acessar a pagina oficial do WhatsApp Web; use mocks, fakes ou paginas virtuais para simular qualquer comportamento do navegador.
+Os testes nunca devem acessar a pagina oficial do WhatsApp Web; use mocks, fakes ou paginas virtuais para simular qualquer comportamento do navegador.
 
 ## Observacoes Operacionais
 
@@ -173,5 +173,5 @@ A cobertura esperada e 100%. Os testes nunca devem acessar a pagina oficial do W
 - Os endpoints de sessao mantem um navegador ativo no processo da API.
 - Os envios sao serializados por processo para evitar disputa pelo mesmo perfil persistente.
 - Use apenas um worker por instancia quando compartilhar o mesmo `WHATSAPP_PROFILE_DIR`.
-- Mudancas na interface do WhatsApp Web podem exigir atualizacao de seletores em `src/pages/pages.py` e `src/whatsapp_service.py`.
+- Mudancas na interface do WhatsApp Web podem exigir atualizacao de seletores em `src/whatsapp_service.py`.
 - A automacao usa WhatsApp Web diretamente no navegador; nao usa bibliotecas nao oficiais baseadas em engenharia reversa do WhatsApp.

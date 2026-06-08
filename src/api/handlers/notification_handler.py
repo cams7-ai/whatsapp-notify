@@ -22,8 +22,7 @@ from domain import (
     SessionStopError,
     TargetNotFoundError,
 )
-from repositories import INotificationRepository, PlaywrightNotificationRepository
-from services import INotificationService, NotificationService, WhatsAppSessionService
+from services import WhatsAppNotificationService, WhatsAppSessionService
 
 logger = logging.getLogger(__name__)
 
@@ -90,9 +89,6 @@ class NotificationHandler:
 
         return self._notification_response(config=config, started_at=started_at)
 
-    async def send(self, payload: NotificationRequest | None) -> NotificationResponse:
-        return await self.send_and_close(payload)
-
     @staticmethod
     def _load_request_config(payload: NotificationRequest) -> AppConfig:
         try:
@@ -127,8 +123,7 @@ class NotificationHandler:
             ) from exc
 
     def _send_message_and_close(self, config: AppConfig) -> None:
-        repository: INotificationRepository = PlaywrightNotificationRepository(config=config)
-        service: INotificationService = NotificationService(repository=repository)
+        service = WhatsAppNotificationService(config=config)
         service.send(target_name=config.target_name, message=config.message)
 
     @staticmethod

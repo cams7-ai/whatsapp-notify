@@ -3,7 +3,6 @@
 from domain.exceptions.error import (
     AuthenticationError,
     DomainError,
-    NotificationError,
     SendError,
     SessionAlreadyOpenError,
     SessionClosedError,
@@ -15,7 +14,6 @@ from domain.models.notification import Notification
 
 __all__ = [
     "DomainError",
-    "NotificationError",
     "AuthenticationError",
     "TargetNotFoundError",
     "SendError",

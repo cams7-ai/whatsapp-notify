@@ -10,7 +10,7 @@ A aplicacao segue Clean Architecture com separacao clara entre API, aplicacao, d
 Presentation  -> src/api/, src/main.py
 Application   -> src/services/
 Domain        -> src/domain/
-Infrastructure-> src/repositories/, src/pages/, src/whatsapp_service.py
+Infrastructure-> src/whatsapp_service.py
 ```
 
 ## Estrutura Atual
@@ -20,10 +20,7 @@ src/
 |-- api/                         # Rotas, handlers, schemas e OpenAPI
 |-- config.py                    # Configuracao via ambiente
 |-- domain/                      # Modelos e excecoes de dominio
-|-- logger.py                    # Configuracao de logging
 |-- main.py                      # Entry point da aplicacao
-|-- pages/                       # Page Object Model do WhatsApp Web
-|-- repositories/                # Interfaces e adaptadores concretos
 |-- services/                    # Orquestracao de negocio e sessao
 `-- whatsapp_service.py          # Automacao Playwright base e sessao persistente
 ```
@@ -31,11 +28,9 @@ src/
 ## Responsabilidades
 
 - `domain/`: contem regras puras, modelos e excecoes sem dependencia de FastAPI ou Playwright.
-- `services/`: valida e orquestra casos de uso, incluindo `WhatsAppSessionService`.
-- `repositories/`: adapta integracoes externas para as interfaces esperadas pela aplicacao.
-- `pages/`: centraliza seletores e acoes de UI do WhatsApp Web em Page Objects.
+- `services/`: valida e orquestra casos de uso, incluindo `WhatsAppNotificationService` e `WhatsAppSessionService`.
 - `api/`: traduz HTTP para chamadas de aplicacao e mapeia erros para respostas.
-- `whatsapp_service.py`: mantem a automacao Playwright e a sessao persistente.
+- `whatsapp_service.py`: centraliza a automacao Playwright, seletores e sessao persistente.
 
 ## Fluxos
 
@@ -43,7 +38,7 @@ src/
 
 1. Cliente chama `POST /whatsapp/messages/send-and-close`.
 2. A API valida payload e carrega configuracao.
-3. `NotificationService` usa `PlaywrightNotificationRepository`.
+3. `WhatsAppNotificationService` valida a notificacao e chama `WhatsAppService`.
 4. `WhatsAppService` abre o navegador, autentica, envia e fecha.
 5. Erros de automacao sao convertidos para erros de dominio/API.
 
@@ -71,7 +66,6 @@ src/
 
 ## Regras de Manutencao
 
-- Nao coloque regra de negocio em Page Objects.
 - Nao coloque seletor de Playwright em `domain/` ou `services/`.
 - Handlers HTTP devem coordenar entrada, saida e chamadas aos servicos.
 - Prefira mensagens de erro de dominio nas camadas internas e mapeamento HTTP apenas em `api/`.
