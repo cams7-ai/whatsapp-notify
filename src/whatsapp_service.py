@@ -322,6 +322,24 @@ class WhatsAppService:
         '[aria-label*="Error" i]',
     )
 
+    _blocking_overlay_close_selectors = (
+        'div[role="dialog"]:has-text("Novidades do WhatsApp Web") button',
+        '[role="dialog"] button[aria-label*="Fechar" i]',
+        '[role="dialog"] button[aria-label*="Close" i]',
+        '[role="dialog"] button[title*="Fechar" i]',
+        '[role="dialog"] button[title*="Close" i]',
+        '[role="dialog"] [aria-label*="Fechar" i]',
+        '[role="dialog"] [aria-label*="Close" i]',
+        '[role="dialog"] span[data-icon="x"]',
+        '[role="dialog"] span[data-icon="close"]',
+        '[aria-modal="true"] button[aria-label*="Fechar" i]',
+        '[aria-modal="true"] button[aria-label*="Close" i]',
+        '[aria-modal="true"] button[title*="Fechar" i]',
+        '[aria-modal="true"] button[title*="Close" i]',
+        '#app > div > div > span:nth-child(3) > div > div > div > div > div > div > h1 > div > div > button',
+        '#app > div > div > span:nth-child(3) > div > div > div > div > div > div > h1 > div > div > button > div > div > div:nth-child(1) > span',
+    )
+
     def __init__(self, config: AppConfig) -> None:
         self.config = config
         self.timeout_ms = config.timeout_seconds * 1000
@@ -504,6 +522,7 @@ class WhatsAppService:
 
     def _open_target_conversation(self, page: Page) -> None:
         logger.info("Buscando contato ou grupo: %s", self.config.target_name)
+        self._dismiss_blocking_overlays(page)
 
         search_box = self._first_visible_locator(
             page,
@@ -529,6 +548,7 @@ class WhatsAppService:
 
     def _send_configured_message(self, page: Page) -> None:
         logger.info("Enviando mensagem")
+        self._dismiss_blocking_overlays(page)
 
         message_box = self._first_visible_locator(
             page,
@@ -1103,6 +1123,115 @@ class WhatsAppService:
                 continue
 
         return False
+
+    def _dismiss_blocking_overlays(self, page: Page) -> None:
+        """Fecha modais visiveis que bloqueiam a interação com o WhatsApp Web."""
+
+        for _ in range(3):
+            close_control = self._first_visible_locator(
+                page,
+                self._blocking_overlay_close_selectors,
+                timeout_ms=500,
+            )
+            if close_control is None:
+                if not self._dismiss_blocking_overlay_with_script(page):
+                    return
+                page.wait_for_timeout(300)
+                continue
+
+            try:
+                logger.info("Modal bloqueante detectado. Fechando antes de continuar")
+                close_control.click(timeout=2000)
+                page.wait_for_timeout(300)
+            except PlaywrightError:
+                try:
+                    close_control.click(timeout=2000, force=True)
+                    page.wait_for_timeout(300)
+                except PlaywrightError:
+                    logger.debug("Falha ao fechar modal bloqueante por locator", exc_info=True)
+                    if not self._dismiss_blocking_overlay_with_script(page):
+                        return
+                    page.wait_for_timeout(300)
+
+    def _dismiss_blocking_overlay_with_script(self, page: Page) -> bool:
+        try:
+            dismissed = page.evaluate(
+                """
+                () => {
+                    const selectors = [
+                        '#app > div > div > span:nth-child(3) > div > div > div > div > div > div > h1 > div > div > button > div > div > div:nth-child(1) > span',
+                        '#app > div > div > span:nth-child(3) > div > div > div > div > div > div > h1 > div > div > button',
+                        '[role="dialog"] button[aria-label*="Fechar" i]',
+                        '[role="dialog"] button[aria-label*="Close" i]',
+                        '[aria-modal="true"] button[aria-label*="Fechar" i]',
+                        '[aria-modal="true"] button[aria-label*="Close" i]',
+                    ];
+
+                    const isVisible = (element) => {
+                        if (!element) return false;
+                        const style = window.getComputedStyle(element);
+                        const rect = element.getBoundingClientRect();
+                        return style.visibility !== 'hidden'
+                            && style.display !== 'none'
+                            && rect.width > 0
+                            && rect.height > 0;
+                    };
+
+                    const clickElement = (element) => {
+                        const clickable = element.closest('button,[role="button"]') || element;
+                        if (!isVisible(clickable)) return false;
+                        clickable.click();
+                        return true;
+                    };
+
+                    for (const selector of selectors) {
+                        const element = document.querySelector(selector);
+                        if (element && clickElement(element)) return true;
+                    }
+
+                    const modalCandidates = Array.from(
+                        document.querySelectorAll('[role="dialog"], [aria-modal="true"]')
+                    ).filter(isVisible);
+
+                    const whatsappNewsModal = modalCandidates.find((element) => {
+                        const text = (element.innerText || element.textContent || '').toLowerCase();
+                        return text.includes('novidades do whatsapp web')
+                            || text.includes('whatsapp web');
+                    });
+
+                    const modals = whatsappNewsModal ? [whatsappNewsModal] : modalCandidates;
+                    for (const modal of modals) {
+                        const closeCandidates = Array.from(
+                            modal.querySelectorAll('button,[role="button"],[aria-label],[title]')
+                        ).filter(isVisible);
+
+                        const closeControl = closeCandidates.find((element) => {
+                            const label = [
+                                element.getAttribute('aria-label'),
+                                element.getAttribute('title'),
+                                element.textContent,
+                            ].filter(Boolean).join(' ').toLowerCase();
+
+                            return label.includes('fechar')
+                                || label.includes('close')
+                                || label.includes('dismiss')
+                                || label === ''
+                                || element.querySelector('span[data-icon="x"],span[data-icon="close"],svg');
+                        });
+
+                        if (closeControl && clickElement(closeControl)) return true;
+                    }
+
+                    return false;
+                }
+                """
+            )
+            if dismissed:
+                logger.info("Modal bloqueante fechado via script")
+            return bool(dismissed)
+        except PlaywrightError:
+            logger.debug("Falha ao fechar modal bloqueante via script", exc_info=True)
+            return False
 
     @staticmethod
     def _normalize_text(value: str) -> str:

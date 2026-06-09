@@ -278,6 +278,118 @@ def test_persistent_session_send_waits_for_authentication(monkeypatch, config):
     assert calls == ["auth", "target", "send"]
 
 
+def test_open_target_conversation_dismisses_overlays_before_search(monkeypatch, config):
+    import whatsapp_service as whatsapp_module
+
+    calls = []
+    service = whatsapp_module.WhatsAppService(config)
+    search_box = object()
+    target = object()
+    message_box = object()
+
+    def fake_first_visible_locator(self, page, selectors, timeout_ms):
+        calls.append(("first_visible", selectors))
+        if selectors == self._search_box_selectors:
+            return search_box
+        if selectors == self._message_box_selectors:
+            return message_box
+        return None
+
+    monkeypatch.setattr(
+        whatsapp_module.WhatsAppService,
+        "_dismiss_blocking_overlays",
+        lambda self, page: calls.append(("dismiss", None)),
+    )
+    monkeypatch.setattr(
+        whatsapp_module.WhatsAppService,
+        "_first_visible_locator",
+        fake_first_visible_locator,
+    )
+    monkeypatch.setattr(
+        whatsapp_module.WhatsAppService,
+        "_fill_textbox",
+        lambda self, page, locator, value: calls.append(("fill", locator)),
+    )
+    monkeypatch.setattr(
+        whatsapp_module.WhatsAppService,
+        "_find_target_result",
+        lambda self, page, target_name: target,
+    )
+    monkeypatch.setattr(
+        whatsapp_module.WhatsAppService,
+        "_click_target_result",
+        lambda self, found_target: calls.append(("click_target", found_target)),
+    )
+
+    service._open_target_conversation(object())
+
+    assert calls == [
+        ("dismiss", None),
+        ("first_visible", service._search_box_selectors),
+        ("fill", search_box),
+        ("click_target", target),
+        ("first_visible", service._message_box_selectors),
+    ]
+
+
+def test_send_configured_message_dismisses_overlays_before_message_box(monkeypatch, config):
+    import whatsapp_service as whatsapp_module
+
+    calls = []
+    service = whatsapp_module.WhatsAppService(config)
+    message_box = object()
+    send_button = object()
+
+    def fake_first_visible_locator(self, page, selectors, timeout_ms):
+        calls.append(("first_visible", selectors))
+        if selectors == self._message_box_selectors:
+            return message_box
+        if selectors == self._send_button_selectors:
+            return send_button
+        return None
+
+    monkeypatch.setattr(
+        whatsapp_module.WhatsAppService,
+        "_dismiss_blocking_overlays",
+        lambda self, page: calls.append(("dismiss", None)),
+    )
+    monkeypatch.setattr(
+        whatsapp_module.WhatsAppService,
+        "_first_visible_locator",
+        fake_first_visible_locator,
+    )
+    monkeypatch.setattr(whatsapp_module.WhatsAppService, "_scroll_conversation_to_bottom", lambda self, page: None)
+    monkeypatch.setattr(
+        whatsapp_module.WhatsAppService,
+        "_wait_for_outgoing_messages_to_stabilize",
+        lambda self, page: None,
+    )
+    monkeypatch.setattr(whatsapp_module.WhatsAppService, "_count_outgoing_message_bubbles", lambda self, page: 0)
+    monkeypatch.setattr(whatsapp_module.WhatsAppService, "_outgoing_message_keys", lambda self, page: set())
+    monkeypatch.setattr(whatsapp_module.WhatsAppService, "_fill_message_box", lambda self, page, locator, value: True)
+    monkeypatch.setattr(
+        whatsapp_module.WhatsAppService,
+        "_click_send_button",
+        lambda self, locator: calls.append(("click_send", locator)),
+    )
+    monkeypatch.setattr(whatsapp_module.WhatsAppService, "_wait_for_send_confirmation", lambda *args, **kwargs: True)
+
+    class FakeKeyboard:
+        def press(self, key):
+            calls.append(("press", key))
+
+    class FakePage:
+        keyboard = FakeKeyboard()
+
+        def wait_for_timeout(self, timeout):
+            pass
+
+    service._send_configured_message(FakePage())
+
+    assert calls[0] == ("dismiss", None)
+    assert calls[1] == ("first_visible", service._message_box_selectors)
+
+
 def test_stop_requires_open_session(service):
     with pytest.raises(SessionClosedError):
         service.stop()
