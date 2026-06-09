@@ -6,7 +6,13 @@ from fastapi import APIRouter, Body, Query
 
 from api.handlers.notification_handler import notification_handler
 from api.openapi import BAD_REQUEST_EXAMPLES, INTERNAL_SERVER_ERROR_EXAMPLES
-from api.schemas import ErrorResponse, NotificationRequest, NotificationResponse, SessionResponse
+from api.schemas import (
+    ErrorResponse,
+    NotificationRequest,
+    NotificationResponse,
+    SendAndCloseNotificationRequest,
+    SessionResponse,
+)
 
 
 router = APIRouter(prefix="/whatsapp", tags=["whatsapp"])
@@ -76,13 +82,14 @@ async def stop_whatsapp_session() -> SessionResponse:
     response_model=NotificationResponse,
     summary="Enviar mensagem e encerrar sessão",
     description=(
-        "Mantém o comportamento antigo de POST /notifications: abre o WhatsApp "
-        "Web, autentica quando necessário, envia a mensagem e fecha o navegador."
+        "Se já houver sessão aberta, envia por ela e encerra a sessão. "
+        "Caso contrário, abre o WhatsApp Web, autentica quando necessário, "
+        "envia a mensagem e fecha o navegador."
     ),
     operation_id="sendWhatsAppMessageAndClose",
     responses=ERROR_RESPONSES,
 )
 async def send_whatsapp_message_and_close(
-    payload: NotificationRequest | None = Body(default=None),
+    payload: SendAndCloseNotificationRequest | None = Body(default=None),
 ) -> NotificationResponse:
     return await notification_handler.send_and_close(payload)

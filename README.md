@@ -110,9 +110,20 @@ POST /whatsapp/messages/send-and-close
 Content-Type: application/json
 ```
 
-Mantem o comportamento antigo de `POST /notifications`: abre o WhatsApp Web, autentica quando necessario, envia a mensagem e fecha o navegador.
+Se ja houver sessao aberta, envia por ela e encerra a sessao. Caso contrario, abre o WhatsApp Web, autentica quando necessario, envia a mensagem e fecha o navegador.
 
 Corpo aceito pelos endpoints de envio:
+
+```json
+{
+  "contact": "Grupo Teste",
+  "message": "Ola pelo WhatsApp Notify"
+}
+```
+
+`contact` e `message` sao opcionais se os valores equivalentes estiverem configurados no `.env`.
+
+O endpoint `POST /whatsapp/messages/send-and-close` tambem aceita `headless`, opcional, para sobrescrever `WHATSAPP_HEADLESS` apenas quando precisar abrir navegador:
 
 ```json
 {
@@ -121,8 +132,6 @@ Corpo aceito pelos endpoints de envio:
   "headless": false
 }
 ```
-
-`contact` e `message` sao opcionais se os valores equivalentes estiverem configurados no `.env`. `headless` e opcional e sobrescreve `WHATSAPP_HEADLESS` apenas no fluxo que abre navegador.
 
 Resposta de envio:
 

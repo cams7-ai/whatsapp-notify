@@ -10,7 +10,12 @@ from fastapi import status
 from fastapi.concurrency import run_in_threadpool
 
 from api.exceptions import ApiError
-from api.schemas.notification_schema import NotificationRequest, NotificationResponse, SessionResponse
+from api.schemas.notification_schema import (
+    NotificationRequest,
+    NotificationResponse,
+    SendAndCloseNotificationRequest,
+    SessionResponse,
+)
 from config import AppConfig, ConfigError, MissingRequiredValueError, load_config, load_session_config
 from domain import (
     AuthenticationError,
@@ -74,16 +79,23 @@ class NotificationHandler:
             message="Sessão do WhatsApp Web encerrada com sucesso.",
         )
 
-    async def send_and_close(self, payload: NotificationRequest | None) -> NotificationResponse:
+    async def send_and_close(
+        self,
+        payload: SendAndCloseNotificationRequest | None,
+    ) -> NotificationResponse:
         started_at = time.perf_counter()
-        request_payload = payload or NotificationRequest()
+        request_payload = payload or SendAndCloseNotificationRequest()
         config = self._load_request_config(request_payload)
 
         logger.info("Requisição recebida para envio ao destino: %s", config.target_name)
 
         try:
             async with self._operation_lock:
-                await run_in_threadpool(self._send_message_and_close, config)
+                if self._session_service.is_open:
+                    await run_in_threadpool(self._session_service.send, config)
+                    await run_in_threadpool(self._session_service.stop)
+                else:
+                    await run_in_threadpool(self._send_message_and_close, config)
         except Exception as exc:
             self._raise_api_error(exc)
 
@@ -95,7 +107,7 @@ class NotificationHandler:
             return load_config(
                 target_name=payload.target_name,
                 message=payload.message,
-                headless=payload.headless,
+                headless=getattr(payload, "headless", None),
             )
         except MissingRequiredValueError as exc:
             raise ApiError(

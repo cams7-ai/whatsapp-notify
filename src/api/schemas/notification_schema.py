@@ -2,7 +2,7 @@
 
 
 class NotificationRequest(BaseModel):
-    """Corpo opcional para sobrescrever destino, mensagem e modo do navegador."""
+    """Corpo opcional para sobrescrever destino e mensagem."""
 
     model_config = ConfigDict(
         extra="forbid",
@@ -11,7 +11,6 @@ class NotificationRequest(BaseModel):
                 {
                     "contact": "Grupo Teste",
                     "message": "Mensagem enviada pela API",
-                    "headless": False,
                 },
                 {},
             ]
@@ -27,6 +26,25 @@ class NotificationRequest(BaseModel):
         default=None,
         description="Mensagem que será enviada pelo WhatsApp Web.",
     )
+
+
+class SendAndCloseNotificationRequest(NotificationRequest):
+    """Corpo opcional para o fluxo que pode abrir navegador."""
+
+    model_config = ConfigDict(
+        extra="forbid",
+        json_schema_extra={
+            "examples": [
+                {
+                    "contact": "Grupo Teste",
+                    "message": "Mensagem enviada pela API",
+                    "headless": False,
+                },
+                {},
+            ]
+        },
+    )
+
     headless: bool | None = Field(
         default=None,
         description="Sobrescreve WHATSAPP_HEADLESS neste envio, quando informado.",

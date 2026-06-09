@@ -2,7 +2,7 @@
 
 from api.exceptions import ApiError
 from api.handlers.notification_handler import NotificationHandler
-from api.schemas.notification_schema import NotificationRequest
+from api.schemas.notification_schema import NotificationRequest, SendAndCloseNotificationRequest
 from domain import SendError, SessionAlreadyOpenError, SessionClosedError
 
 class FakeSessionService:
@@ -10,6 +10,7 @@ class FakeSessionService:
         self.started = []
         self.sent = []
         self.stopped = 0
+        self.is_open = False
         self.start_error = None
         self.send_error = None
         self.stop_error = None
@@ -17,6 +18,7 @@ class FakeSessionService:
     def start(self, config):
         if self.start_error:
             raise self.start_error
+        self.is_open = True
         self.started.append(config)
 
     def send(self, config):
@@ -27,6 +29,7 @@ class FakeSessionService:
     def stop(self):
         if self.stop_error:
             raise self.stop_error
+        self.is_open = False
         self.stopped += 1
 
 
@@ -100,13 +103,28 @@ async def test_send_and_close_preserves_complete_send_flow(monkeypatch, handler,
         calls.append((config.target_name, config.message, config.headless))
 
     monkeypatch.setattr(handler, "_send_message_and_close", fake_send_and_close)
-    payload = NotificationRequest(contact="Grupo", message="Ola", headless=True)
+    payload = SendAndCloseNotificationRequest(contact="Grupo", message="Ola", headless=True)
 
     response = await handler.send_and_close(payload)
 
     assert response.status == "enviado"
     assert response.target_name == "Grupo"
     assert calls == [("Grupo", "Ola", True)]
+
+
+@pytest.mark.anyio
+async def test_send_and_close_uses_and_closes_open_session(handler, session_service, env):
+    session_service.is_open = True
+    payload = NotificationRequest(contact="Grupo", message="Ola")
+
+    response = await handler.send_and_close(payload)
+
+    assert response.status == "enviado"
+    assert response.target_name == "Grupo"
+    assert session_service.sent[0].target_name == "Grupo"
+    assert session_service.sent[0].message == "Ola"
+    assert session_service.stopped == 1
+    assert session_service.is_open is False
 
 
 @pytest.mark.anyio

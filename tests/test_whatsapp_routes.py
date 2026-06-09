@@ -74,3 +74,18 @@ async def test_old_notifications_route_is_not_registered():
     assert "charset=utf-8" in response.headers["content-type"]
     assert response.json()["error"]["code"] == "ROTA_NAO_ENCONTRADA"
     assert response.json()["error"]["message"] == "Rota não encontrada."
+
+
+@pytest.mark.anyio
+async def test_send_with_open_session_rejects_headless_payload():
+    transport = httpx.ASGITransport(app=app, raise_app_exceptions=False)
+
+    async with httpx.AsyncClient(transport=transport, base_url="http://testserver") as client:
+        response = await client.post(
+            "/whatsapp/messages/send",
+            json={"contact": "Grupo", "message": "Olá", "headless": False},
+        )
+
+    assert response.status_code == 400
+    assert response.json()["error"]["code"] == "REQUISICAO_INVALIDA"
+    assert "headless" in response.json()["error"]["fields"]
