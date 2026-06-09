@@ -22,9 +22,9 @@ class WhatsAppNotificationService:
             raise DomainError(f"Notificacao invalida: {exc}") from exc
 
         logger.info(
-            "Enviando notificacao para %s: %s",
+            "Enviando notificacao para %s com %s caracteres",
             notification.target_name,
-            notification.message[:50],
+            len(notification.message),
         )
 
         config = AppConfig(

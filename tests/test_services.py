@@ -62,6 +62,16 @@ class TestWhatsAppNotificationService:
         assert instance.config.profile_dir == config.profile_dir
         assert instance.config.timeout_seconds == config.timeout_seconds
 
+    def test_send_does_not_log_message_content(self, service, caplog):
+        secret_message = "senha temporaria 123456"
+
+        with caplog.at_level("INFO", logger="services.whatsapp_notification_service"):
+            service.send(target_name="Grupo Teste", message=secret_message)
+
+        log_output = caplog.text
+        assert secret_message not in log_output
+        assert "23 caracteres" in log_output
+
     def test_send_maps_authentication_timeout(self, service):
         DummyWhatsAppService.run_error = ws_mod.AuthenticationTimeoutError("timeout")
 

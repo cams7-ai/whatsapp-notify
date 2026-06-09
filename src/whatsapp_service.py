@@ -1,4 +1,4 @@
-﻿"""ServiÃ§o de automaÃ§Ã£o do WhatsApp Web com Playwright."""
+﻿"""Serviço de automação do WhatsApp Web com Playwright."""
 
 from __future__ import annotations
 
@@ -19,35 +19,35 @@ logger = logging.getLogger(__name__)
 
 
 class WhatsAppNotifyError(RuntimeError):
-    """ExceÃ§Ã£o base para falhas na automaÃ§Ã£o do WhatsApp."""
+    """Exceção base para falhas na automação do WhatsApp."""
 
 
 class AuthenticationTimeoutError(WhatsAppNotifyError):
-    """Erro gerado quando a autenticaÃ§Ã£o no WhatsApp Web expira."""
+    """Erro gerado quando a autenticação no WhatsApp Web expira."""
 
 
 class TargetNotFoundError(WhatsAppNotifyError):
-    """Erro gerado quando o contato ou grupo nÃ£o Ã© encontrado."""
+    """Erro gerado quando o contato ou grupo não é encontrado."""
 
 
 class MessageSendError(WhatsAppNotifyError):
-    """Erro gerado quando a mensagem nÃ£o pode ser enviada."""
+    """Erro gerado quando a mensagem não pode ser enviada."""
 
 
 class SessionNotOpenError(WhatsAppNotifyError):
-    """Erro gerado quando a operacao exige uma sessao aberta."""
+    """Erro gerado quando a operação exige uma sessão aberta."""
 
 
 class SessionAlreadyOpenError(WhatsAppNotifyError):
-    """Erro gerado quando ja existe uma sessao aberta."""
+    """Erro gerado quando ja existe uma sessão aberta."""
 
 
 class SessionCloseError(WhatsAppNotifyError):
-    """Erro gerado quando nao e possivel fechar a sessao."""
+    """Erro gerado quando não e possivel fechar a sessão."""
 
 
 class PersistentWhatsAppSession:
-    """Mantem o WhatsApp Web aberto para envios reutilizando a mesma sessao."""
+    """Mantem o WhatsApp Web aberto para envios reutilizando a mesma sessão."""
 
     def __init__(self, config: AppConfig) -> None:
         self.config = config
@@ -198,7 +198,7 @@ class WhatsAppService:
 
     _search_box_selectors = (
         '[data-testid="chat-list-search-container"] input[role="textbox"]',
-        'input[role="textbox"][aria-label*="Pesquisar ou comeÃ§ar" i]',
+        'input[role="textbox"][aria-label*="Pesquisar ou começar" i]',
         'input[role="textbox"][aria-label*="Search or start" i]',
         'input[role="textbox"][aria-label*="Pesquisar" i]',
         'input[role="textbox"][aria-label*="Search" i]',
@@ -304,7 +304,7 @@ class WhatsAppService:
         self.timeout_ms = config.timeout_seconds * 1000
 
     def run(self) -> None:
-        """Abre o WhatsApp Web, autentica se necessÃ¡rio e envia a mensagem."""
+        """Abre o WhatsApp Web, autentica se necessário e envia a mensagem."""
 
         self._ensure_profile_dir(self.config.profile_dir)
 
@@ -314,9 +314,9 @@ class WhatsAppService:
                 viewport = ViewportSize(width=1280, height=900)
 
             logger.info("Inicializando Chromium com perfil persistente")
-            # Ajuste de flags para reduzir sinais Ã³bvios de automaÃ§Ã£o quando
+            # Ajuste de flags para reduzir sinais obvios de automação quando
             # executando em headless. Mantemos comportamento original em modo
-            # visÃ­vel.
+            # visível.
             launch_args: list[str]
             if self.config.headless:
                 launch_args = [
@@ -349,9 +349,9 @@ class WhatsAppService:
                 user_agent=user_agent,
                 locale=locale,
             )
-            # Injeta um script de inicializaÃ§Ã£o para minimizar sinais de
-            # automaÃ§Ã£o (navigator.webdriver etc.). Nem sempre Ã© possÃ­vel
-            # injetar (depende da versÃ£o), entÃ£o protegemos com try/except.
+            # Injeta um script de inicialização para minimizar sinais de
+            # automação (navigator.webdriver etc.). Nem sempre e possí­vel
+            # injetar (depende da versão), então protegemos com try/except.
             try:
                 context.add_init_script(
                     """
@@ -365,18 +365,18 @@ class WhatsAppService:
                     """
                 )
             except Exception:
-                logger.debug("NÃ£o foi possÃ­vel injetar init script no contexto")
+                logger.debug("Não foi possível injetar init script no contexto")
             context.set_default_timeout(self.timeout_ms)
 
             try:
                 page = context.pages[0] if context.pages else context.new_page()
                 self._open_whatsapp_web(page)
-                # Pequeno delay para garantir que dados de sessÃ£o e scripts do
-                # profile foram carregados antes de coletarmos diagnÃ³sticos.
+                # Pequeno delay para garantir que dados de sessão e scripts do
+                # profile foram carregados antes de coletarmos diagnósticos.
                 page.wait_for_timeout(1000)
-                # Capture metadata da pÃ¡gina para diagnÃ³stico (userAgent,
+                # Capture metadata da página para diagnóstico (userAgent,
                 # webdriver, url, title, cookies count). Isso ajuda a entender
-                # diferenÃ§as entre headful e headless quando a sessÃ£o nÃ£o Ã©
+                # diferenças entre headful e headless quando a sessão não está
                 # corretamente reaplicada.
                 try:
                     self._capture_page_metadata(page)
@@ -412,22 +412,22 @@ class WhatsAppService:
                 qr_logged = True
 
                 # Em headless, tentamos capturar o QR Code em arquivo para que
-                # o usuÃ¡rio possa escaneÃ¡-lo externamente.
+                # o usuário possa escanea-lo externamente.
                 if self.config.headless:
                     try:
                         qr_locator = self._first_visible_locator(page, self._qr_code_selectors, timeout_ms=500)
                         if qr_locator is not None:
                             qr_path = self.config.profile_dir / "whatsapp_qr.png"
                             qr_locator.screenshot(path=str(qr_path))
-                            logger.info("QR Code capturado em %s â€” escaneie com o WhatsApp no celular", qr_path)
+                            logger.info("QR Code capturado em %s e escaneie com o WhatsApp no celular", qr_path)
                     except Exception:
                         logger.exception("Falha ao capturar QR Code em headless")
 
             page.wait_for_timeout(1000)
 
-        # Antes de lanÃ§ar a exceÃ§Ã£o, capturamos artefatos para diagnÃ³stico
+        # Antes de lançar a exceção, capturamos artefatos para diagnótico
         # (screenshot e HTML) para entender o que o WhatsApp Web exibiu em
-        # headless e facilitar correÃ§Ãµes.
+        # headless e facilitar correções.
         try:
             failure_png = self.config.profile_dir / "last_headless_failure.png"
             failure_html = self.config.profile_dir / "last_headless_failure.html"
@@ -438,21 +438,21 @@ class WhatsAppService:
                 try:
                     page.screenshot(path=str(failure_png))
                 except Exception:
-                    logger.exception("Falha ao capturar screenshot da pÃ¡gina")
+                    logger.exception("Falha ao capturar screenshot da página")
 
             try:
                 with open(failure_html, "w", encoding="utf-8") as f:
                     f.write(page.content())
             except Exception:
-                logger.exception("Falha ao gravar HTML da pÃ¡gina para diagnÃ³stico")
+                logger.exception("Falha ao gravar HTML da página para diagnóstico")
 
             logger.error(
-                "Autenticação falhou â€” salvo screenshot em %s e HTML em %s",
+                "Autenticação falhou e salvo screenshot em %s e HTML em %s",
                 failure_png,
                 failure_html,
             )
         except Exception:
-            logger.exception("Erro ao criar artefatos de diagnÃ³stico de autenticaÃ§Ã£o")
+            logger.exception("Erro ao criar artefatos de diagnóstico de autenticação")
 
         raise AuthenticationTimeoutError(
             f"Autenticação não concluída em {self.config.timeout_seconds} segundos"
@@ -536,7 +536,7 @@ class WhatsAppService:
                 page.keyboard.press("Enter")
             else:
                 logger.info(
-                    "Mensagem saiu do campo de composiÃ§Ã£o. Aguardando confirmaÃ§Ã£o do WhatsApp Web"
+                    "Mensagem saiu do campo de composição. Aguardando confirmação do WhatsApp Web"
                 )
 
             send_confirmed = self._wait_for_send_confirmation(
@@ -641,7 +641,7 @@ class WhatsAppService:
                     timeout_ms=3000,
                 ):
                     logger.info(
-                        "Mensagem inserida no campo de composiÃ§Ã£o usando %s",
+                        "Mensagem inserida no campo de composição usando %s",
                         attempt_name,
                     )
                     return True
@@ -1087,7 +1087,7 @@ class WhatsAppService:
         return None
 
     def _capture_page_metadata(self, page: Page) -> None:
-        """Grava metadados Ãºteis da pÃ¡gina para diagnÃ³stico.
+        """Grava metadados úteis da página para diagnóstico.
 
         Gera um arquivo `page_debug.txt` dentro do `profile_dir` com:
         - url atual

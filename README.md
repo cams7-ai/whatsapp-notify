@@ -50,6 +50,7 @@ WHATSAPP_PROFILE_DIR=.whatsapp-profile
 WHATSAPP_TIMEOUT_SECONDS=60
 API_HOST=0.0.0.0
 API_PORT=8000
+LOG_LEVEL=INFO
 ```
 
 Variaveis principais:
@@ -61,6 +62,7 @@ Variaveis principais:
 - `WHATSAPP_TIMEOUT_SECONDS`: timeout maximo para autenticacao, busca e envio.
 - `API_HOST`: host do servidor FastAPI.
 - `API_PORT`: porta do servidor FastAPI.
+- `LOG_LEVEL`: nivel minimo de log da aplicacao (`DEBUG`, `INFO`, `WARNING`, `ERROR`).
 
 ## Execucao
 
