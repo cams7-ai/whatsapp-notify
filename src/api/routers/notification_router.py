@@ -44,8 +44,33 @@ ERROR_RESPONSES = {
 )
 async def start_whatsapp_session(
     headless: bool | None = Query(default=None),
+    timeoutInSecounds: int | None = Query(default=None, gt=0),
 ) -> SessionResponse:
-    return await notification_handler.start_session(headless=headless)
+    return await notification_handler.start_session(
+        headless=headless,
+        timeout_seconds=timeoutInSecounds,
+    )
+
+
+@router.get(
+    "/session/qrcode",
+    summary="Capturar QR Code do WhatsApp Web",
+    description=(
+        "Captura o QR Code visível usando apenas a sessão do WhatsApp Web já "
+        "aberta. Se não houver sessão aberta, retorna SESSAO_FECHADA. Os "
+        "headers informam a janela estimada de expiração do QR Code."
+    ),
+    operation_id="getWhatsAppSessionQRCode",
+    responses={
+        **ERROR_RESPONSES,
+        200: {
+            "content": {"image/png": {}},
+            "description": "Imagem PNG do QR Code.",
+        },
+    },
+)
+async def get_whatsapp_session_qrcode():
+    return await notification_handler.get_qr_code()
 
 
 @router.post(

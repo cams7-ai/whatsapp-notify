@@ -17,6 +17,10 @@ class SendError(DomainError):
     """Excecao quando a mensagem nao pode ser enviada."""
 
 
+class QRCodeNotFoundError(DomainError):
+    """Excecao quando o QR Code de autenticacao nao esta disponivel."""
+
+
 class SessionAlreadyOpenError(DomainError):
     """Excecao quando uma sessao ja esta aberta."""
 

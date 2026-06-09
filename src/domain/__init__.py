@@ -3,6 +3,7 @@
 from domain.exceptions.error import (
     AuthenticationError,
     DomainError,
+    QRCodeNotFoundError,
     SendError,
     SessionAlreadyOpenError,
     SessionClosedError,
@@ -15,6 +16,7 @@ from domain.models.notification import Notification
 __all__ = [
     "DomainError",
     "AuthenticationError",
+    "QRCodeNotFoundError",
     "TargetNotFoundError",
     "SendError",
     "SessionAlreadyOpenError",

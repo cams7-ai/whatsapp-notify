@@ -7,6 +7,7 @@ import logging
 from config import AppConfig
 from domain import (
     AuthenticationError,
+    QRCodeNotFoundError,
     SendError,
     SessionAlreadyOpenError,
     SessionClosedError,
@@ -18,6 +19,7 @@ from whatsapp_service import (
     AuthenticationTimeoutError,
     MessageSendError,
     PersistentWhatsAppSession,
+    QRCodeNotFoundError as PlaywrightQRCodeNotFoundError,
     SessionAlreadyOpenError as PlaywrightSessionAlreadyOpenError,
     SessionCloseError,
     SessionNotOpenError,
@@ -26,6 +28,8 @@ from whatsapp_service import (
 )
 
 logger = logging.getLogger(__name__)
+
+QR_CODE_EXPIRES_IN_SECONDS = 60
 
 class WhatsAppSessionService:
     """Orquestra uma sessão persistente sem expor Playwright para a camada HTTP."""
@@ -73,6 +77,26 @@ class WhatsAppSessionService:
             raise SendError(str(exc)) from exc
         except WhatsAppNotifyError as exc:
             raise SendError(f"Erro na automação: {exc}") from exc
+
+    def capture_qr_code(self) -> tuple[bytes, int]:
+        if not self.is_open or self._session is None:
+            raise SessionClosedError("A sessão do WhatsApp Web está fechada. Inicie a sessão antes de enviar mensagens.")
+
+        session = self._session
+
+        try:
+            qr_code = session.capture_qr_code()
+        except PlaywrightQRCodeNotFoundError as exc:
+            raise QRCodeNotFoundError(str(exc)) from exc
+        except AuthenticationTimeoutError as exc:
+            raise AuthenticationError(str(exc)) from exc
+        except WhatsAppNotifyError as exc:
+            raise SessionStartError(f"Não foi possível capturar o QR Code do WhatsApp Web: {exc}") from exc
+        except Exception as exc:
+            logger.exception("Erro inesperado ao capturar QR Code do WhatsApp Web")
+            raise SessionStartError("Não foi possível capturar o QR Code do WhatsApp Web.") from exc
+
+        return qr_code, QR_CODE_EXPIRES_IN_SECONDS
 
     def stop(self) -> None:
         if not self.is_open or self._session is None:

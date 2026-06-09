@@ -81,10 +81,27 @@ whatsapp-notify
 ### Iniciar sessao
 
 ```http
-GET /whatsapp/session/start?headless=false
+GET /whatsapp/session/start?headless=false&timeoutInSecounds=60
 ```
 
-Abre o navegador, aguarda autenticacao quando necessario e mantem a sessao ativa. Se `headless` nao for informado, a API usa `WHATSAPP_HEADLESS`.
+Abre o navegador e mantem a sessao ativa. Se for necessario autenticar, o navegador fica na tela do QR Code para que `/whatsapp/session/qrcode` possa retornar a imagem. Se `headless` nao for informado, a API usa `WHATSAPP_HEADLESS`. Se `timeoutInSecounds` nao for informado, a API usa `WHATSAPP_TIMEOUT_SECONDS`.
+
+### Capturar QR Code
+
+```http
+GET /whatsapp/session/qrcode
+```
+
+Usa a sessao do WhatsApp Web ja aberta, captura o QR Code visivel e retorna a imagem em PNG. Funciona com sessoes abertas em `headless=false` e `headless=true`. Se nao houver sessao aberta, retorna o mesmo erro de `/whatsapp/messages/send`: `SESSAO_FECHADA`. Se a sessao existir, mas o QR Code nao estiver disponivel, retorna erro JSON com `QR_CODE_NAO_ENCONTRADO`.
+
+A captura do QR Code usa uma espera curta para nao bloquear a requisicao pelo timeout completo da sessao.
+
+Headers relevantes da resposta:
+
+- `Content-Type: image/png`
+- `X-QRCode-Expires-In-Seconds`: janela estimada de validade do QR Code, em segundos.
+- `X-QRCode-Expires-At`: data/hora UTC estimada de expiracao do QR Code.
+- `Cache-Control: no-store`
 
 ### Enviar mensagem com sessao aberta
 
@@ -129,9 +146,12 @@ O endpoint `POST /whatsapp/messages/send-and-close` tambem aceita `headless`, op
 {
   "contact": "Grupo Teste",
   "message": "Ola pelo WhatsApp Notify",
-  "headless": false
+  "headless": false,
+  "timeoutInSecounds": 60
 }
 ```
+
+`timeoutInSecounds` sobrescreve `WHATSAPP_TIMEOUT_SECONDS` apenas para esta operacao. Quando ausente, a API usa `WHATSAPP_TIMEOUT_SECONDS`.
 
 Resposta de envio:
 

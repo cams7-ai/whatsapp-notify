@@ -1,4 +1,16 @@
-﻿from pydantic import BaseModel, ConfigDict, Field
+from pydantic import BaseModel, ConfigDict, Field
+
+
+class TimeoutPayload(BaseModel):
+    timeout_seconds: int | None = Field(
+        default=None,
+        alias="timeoutInSecounds",
+        gt=0,
+        description=(
+            "Timeout em segundos para autenticação, busca e envio. "
+            "Quando ausente, usa WHATSAPP_TIMEOUT_SECONDS."
+        ),
+    )
 
 
 class NotificationRequest(BaseModel):
@@ -28,7 +40,7 @@ class NotificationRequest(BaseModel):
     )
 
 
-class SendAndCloseNotificationRequest(NotificationRequest):
+class SendAndCloseNotificationRequest(NotificationRequest, TimeoutPayload):
     """Corpo opcional para o fluxo que pode abrir navegador."""
 
     model_config = ConfigDict(
@@ -39,6 +51,7 @@ class SendAndCloseNotificationRequest(NotificationRequest):
                     "contact": "Grupo Teste",
                     "message": "Mensagem enviada pela API",
                     "headless": False,
+                    "timeoutInSecounds": 60,
                 },
                 {},
             ]

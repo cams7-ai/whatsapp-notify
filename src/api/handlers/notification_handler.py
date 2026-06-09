@@ -5,8 +5,9 @@ from __future__ import annotations
 import asyncio
 import logging
 import time
+from datetime import UTC, datetime, timedelta
 
-from fastapi import status
+from fastapi import Response, status
 from fastapi.concurrency import run_in_threadpool
 
 from api.exceptions import ApiError
@@ -20,6 +21,7 @@ from config import AppConfig, ConfigError, MissingRequiredValueError, load_confi
 from domain import (
     AuthenticationError,
     DomainError,
+    QRCodeNotFoundError,
     SendError,
     SessionAlreadyOpenError,
     SessionClosedError,
@@ -38,8 +40,15 @@ class NotificationHandler:
         self._operation_lock = asyncio.Lock()
         self._session_service = session_service or WhatsAppSessionService()
 
-    async def start_session(self, headless: bool | None = None) -> SessionResponse:
-        config = self._load_session_config(headless=headless)
+    async def start_session(
+        self,
+        headless: bool | None = None,
+        timeout_seconds: int | None = None,
+    ) -> SessionResponse:
+        config = self._load_session_config(
+            headless=headless,
+            timeout_seconds=timeout_seconds,
+        )
 
         try:
             async with self._operation_lock:
@@ -50,6 +59,26 @@ class NotificationHandler:
         return SessionResponse(
             status="ok",
             message="Sessão do WhatsApp Web iniciada com sucesso.",
+        )
+
+    async def get_qr_code(self) -> Response:
+        try:
+            async with self._operation_lock:
+                qr_code, expires_in_seconds = await run_in_threadpool(
+                    self._session_service.capture_qr_code,
+                )
+        except Exception as exc:
+            self._raise_api_error(exc)
+
+        expires_at = datetime.now(UTC) + timedelta(seconds=expires_in_seconds)
+        return Response(
+            content=qr_code,
+            media_type="image/png",
+            headers={
+                "Cache-Control": "no-store",
+                "X-QRCode-Expires-In-Seconds": str(expires_in_seconds),
+                "X-QRCode-Expires-At": expires_at.isoformat(),
+            },
         )
 
     async def send_with_open_session(self, payload: NotificationRequest | None) -> NotificationResponse:
@@ -108,6 +137,7 @@ class NotificationHandler:
                 target_name=payload.target_name,
                 message=payload.message,
                 headless=getattr(payload, "headless", None),
+                timeout_seconds=getattr(payload, "timeout_seconds", None),
             )
         except MissingRequiredValueError as exc:
             raise ApiError(
@@ -124,9 +154,13 @@ class NotificationHandler:
             ) from exc
 
     @staticmethod
-    def _load_session_config(*, headless: bool | None) -> AppConfig:
+    def _load_session_config(
+        *,
+        headless: bool | None,
+        timeout_seconds: int | None = None,
+    ) -> AppConfig:
         try:
-            return load_session_config(headless=headless)
+            return load_session_config(headless=headless, timeout_seconds=timeout_seconds)
         except ConfigError as exc:
             raise ApiError(
                 status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
@@ -168,6 +202,12 @@ class NotificationHandler:
                 code="DESTINO_NAO_ENCONTRADO",
                 message=str(exc),
                 fields=["contact"],
+            ) from exc
+        if isinstance(exc, QRCodeNotFoundError):
+            raise ApiError(
+                status_code=status.HTTP_400_BAD_REQUEST,
+                code="QR_CODE_NAO_ENCONTRADO",
+                message=str(exc),
             ) from exc
         if isinstance(exc, AuthenticationError):
             raise ApiError(

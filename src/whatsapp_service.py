@@ -14,6 +14,7 @@ from config import AppConfig
 
 
 WHATSAPP_WEB_URL = "https://web.whatsapp.com"
+QR_CODE_CAPTURE_TIMEOUT_MS = 2000
 
 logger = logging.getLogger(__name__)
 
@@ -46,6 +47,10 @@ class SessionCloseError(WhatsAppNotifyError):
     """Erro gerado quando não e possivel fechar a sessão."""
 
 
+class QRCodeNotFoundError(WhatsAppNotifyError):
+    """Erro gerado quando o QR Code nao esta visivel para captura."""
+
+
 class PersistentWhatsAppSession:
     """Mantem o WhatsApp Web aberto para envios reutilizando a mesma sessão."""
 
@@ -64,31 +69,26 @@ class PersistentWhatsAppSession:
         if self.is_open:
             raise SessionAlreadyOpenError("A sessão do WhatsApp Web já está aberta.")
 
-        self._service._ensure_profile_dir(self.config.profile_dir)
         try:
-            self._playwright = sync_playwright().start()
-            viewport: ViewportSize | None = None
-            if self.config.headless:
-                viewport = ViewportSize(width=1280, height=900)
-
-            self._context = self._playwright.chromium.launch_persistent_context(
-                user_data_dir=str(self.config.profile_dir),
-                headless=self.config.headless,
-                viewport=viewport,
-                args=self._launch_args(),
-                user_agent=self._user_agent(),
-                locale="pt-BR",
-            )
-            self._context.set_default_timeout(self._service.timeout_ms)
-            self._add_init_script()
-            self._page = self._context.pages[0] if self._context.pages else self._context.new_page()
-            self._service._open_whatsapp_web(self._page)
-            self._page.wait_for_timeout(1000)
-            self._service._capture_page_metadata(self._page)
-            self._service._wait_for_authentication(self._page)
+            self._open_browser_session()
         except Exception:
             self._safe_stop()
             raise
+
+    def capture_qr_code(self) -> bytes:
+        if not self.is_open or self._page is None:
+            raise SessionNotOpenError("A sessão do WhatsApp Web está fechada.")
+
+        qr_code = self._service._capture_qr_code(
+            self._page,
+            timeout_ms=QR_CODE_CAPTURE_TIMEOUT_MS,
+        )
+        if qr_code is None:
+            raise QRCodeNotFoundError(
+                "QR Code não encontrado. A sessão pode já estar autenticada ou a tela de login não foi exibida."
+            )
+
+        return qr_code
 
     def send(self, target_name: str, message: str) -> None:
         if self._page is None:
@@ -101,6 +101,7 @@ class PersistentWhatsAppSession:
             profile_dir=self.config.profile_dir,
             timeout_seconds=self.config.timeout_seconds,
         )
+        self._service._wait_for_authentication(self._page)
         self._service._open_target_conversation(self._page)
         self._service._send_configured_message(self._page)
 
@@ -124,6 +125,28 @@ class PersistentWhatsAppSession:
             context.close()
         if playwright is not None:
             playwright.stop()
+
+    def _open_browser_session(self) -> None:
+        self._service._ensure_profile_dir(self.config.profile_dir)
+        self._playwright = sync_playwright().start()
+        viewport: ViewportSize | None = None
+        if self.config.headless:
+            viewport = ViewportSize(width=1280, height=900)
+
+        self._context = self._playwright.chromium.launch_persistent_context(
+            user_data_dir=str(self.config.profile_dir),
+            headless=self.config.headless,
+            viewport=viewport,
+            args=self._launch_args(),
+            user_agent=self._user_agent(),
+            locale="pt-BR",
+        )
+        self._context.set_default_timeout(self._service.timeout_ms)
+        self._add_init_script()
+        self._page = self._context.pages[0] if self._context.pages else self._context.new_page()
+        self._service._open_whatsapp_web(self._page)
+        self._page.wait_for_timeout(1000)
+        self._service._capture_page_metadata(self._page)
 
     def _add_init_script(self) -> None:
         if self._context is None:
@@ -457,6 +480,27 @@ class WhatsAppService:
         raise AuthenticationTimeoutError(
             f"Autenticação não concluída em {self.config.timeout_seconds} segundos"
         )
+
+    def _capture_qr_code(self, page: Page, timeout_ms: int) -> bytes | None:
+        qr_locator = self._first_visible_locator(
+            page,
+            self._qr_code_selectors,
+            timeout_ms=timeout_ms,
+        )
+        if qr_locator is None:
+            return None
+
+        try:
+            canvas = qr_locator.locator("canvas").first
+            if canvas.is_visible(timeout=250):
+                return canvas.screenshot()
+        except PlaywrightError:
+            pass
+
+        try:
+            return qr_locator.screenshot()
+        except PlaywrightError:
+            return None
 
     def _open_target_conversation(self, page: Page) -> None:
         logger.info("Buscando contato ou grupo: %s", self.config.target_name)

@@ -39,6 +39,7 @@ def load_config(
     target_name: str | None = None,
     message: str | None = None,
     headless: bool | None = None,
+    timeout_seconds: int | None = None,
 ) -> AppConfig:
     """Carrega configurações para um fluxo de envio de mensagem."""
 
@@ -56,7 +57,9 @@ def load_config(
         ),
         headless=headless if headless is not None else _parse_bool("WHATSAPP_HEADLESS", default=False),
         profile_dir=_parse_profile_dir("WHATSAPP_PROFILE_DIR", base_dir),
-        timeout_seconds=_parse_positive_int("WHATSAPP_TIMEOUT_SECONDS", default=60),
+        timeout_seconds=timeout_seconds
+        if timeout_seconds is not None
+        else _parse_positive_int("WHATSAPP_TIMEOUT_SECONDS", default=60),
     )
 
 
@@ -64,6 +67,7 @@ def load_session_config(
     env_file: Path | None = None,
     *,
     headless: bool | None = None,
+    timeout_seconds: int | None = None,
 ) -> AppConfig:
     """Carrega configurações para abrir uma sessão sem exigir contato ou mensagem."""
 
@@ -73,7 +77,9 @@ def load_session_config(
         message="",
         headless=headless if headless is not None else _parse_bool("WHATSAPP_HEADLESS", default=False),
         profile_dir=_parse_profile_dir("WHATSAPP_PROFILE_DIR", base_dir),
-        timeout_seconds=_parse_positive_int("WHATSAPP_TIMEOUT_SECONDS", default=60),
+        timeout_seconds=timeout_seconds
+        if timeout_seconds is not None
+        else _parse_positive_int("WHATSAPP_TIMEOUT_SECONDS", default=60),
     )
 
 
