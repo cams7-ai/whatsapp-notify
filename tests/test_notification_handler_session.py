@@ -2,11 +2,8 @@
 
 from api.exceptions import ApiError
 from api.handlers.notification_handler import NotificationHandler
-from api.schemas.notification_schema import (
-    NotificationRequest,
-    SendAndCloseNotificationRequest,
-)
-from domain import QRCodeNotFoundError, SendError, SessionAlreadyOpenError, SessionClosedError
+from api.schemas.notification_schema import NotificationRequest
+from domain import QRCodeNotFoundError, SessionAlreadyOpenError, SessionClosedError
 
 class FakeSessionService:
     def __init__(self):
@@ -148,67 +145,6 @@ async def test_send_with_open_session_maps_closed_session(handler, session_servi
 
     assert error.value.status_code == 400
     assert error.value.code == "SESSAO_FECHADA"
-
-
-@pytest.mark.anyio
-async def test_send_and_close_preserves_complete_send_flow(monkeypatch, handler, env):
-    calls = []
-
-    def fake_send_and_close(config):
-        calls.append((config.target_name, config.message, config.headless))
-
-    monkeypatch.setattr(handler, "_send_message_and_close", fake_send_and_close)
-    payload = SendAndCloseNotificationRequest(contact="Grupo", message="Ola", headless=True)
-
-    response = await handler.send_and_close(payload)
-
-    assert response.status == "enviado"
-    assert response.target_name == "Grupo"
-    assert calls == [("Grupo", "Ola", True)]
-
-
-@pytest.mark.anyio
-async def test_send_and_close_uses_payload_timeout(monkeypatch, handler, env):
-    calls = []
-
-    def fake_send_and_close(config):
-        calls.append(config.timeout_seconds)
-
-    monkeypatch.setattr(handler, "_send_message_and_close", fake_send_and_close)
-    payload = SendAndCloseNotificationRequest(contact="Grupo", message="Ola", timeoutInSecounds=20)
-
-    await handler.send_and_close(payload)
-
-    assert calls == [20]
-
-
-@pytest.mark.anyio
-async def test_send_and_close_uses_and_closes_open_session(handler, session_service, env):
-    session_service.is_open = True
-    payload = NotificationRequest(contact="Grupo", message="Ola")
-
-    response = await handler.send_and_close(payload)
-
-    assert response.status == "enviado"
-    assert response.target_name == "Grupo"
-    assert session_service.sent[0].target_name == "Grupo"
-    assert session_service.sent[0].message == "Ola"
-    assert session_service.stopped == 1
-    assert session_service.is_open is False
-
-
-@pytest.mark.anyio
-async def test_send_and_close_maps_send_error(monkeypatch, handler, env):
-    def fake_send_and_close(config):
-        raise SendError("falha")
-
-    monkeypatch.setattr(handler, "_send_message_and_close", fake_send_and_close)
-
-    with pytest.raises(ApiError) as error:
-        await handler.send_and_close(NotificationRequest(contact="Grupo", message="Ola"))
-
-    assert error.value.status_code == 500
-    assert error.value.code == "FALHA_NO_ENVIO"
 
 
 @pytest.mark.anyio

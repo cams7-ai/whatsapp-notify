@@ -21,8 +21,7 @@ BAD_REQUEST_EXAMPLES = {
                 "message": (
                     "Corpo da requisição inválido. Envie um JSON com os campos "
                     "opcionais esperados para este endpoint. O campo 'headless' é "
-                    "aceito apenas em /whatsapp/session/start e "
-                    "/whatsapp/messages/send-and-close."
+                    "aceito apenas em /whatsapp/session/start."
                 ),
                 "fields": ["message"],
             }

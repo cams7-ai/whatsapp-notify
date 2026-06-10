@@ -14,7 +14,6 @@ from api.exceptions import ApiError
 from api.schemas.notification_schema import (
     NotificationRequest,
     NotificationResponse,
-    SendAndCloseNotificationRequest,
     SessionResponse,
 )
 from config import AppConfig, ConfigError, MissingRequiredValueError, load_config, load_session_config
@@ -29,7 +28,7 @@ from domain import (
     SessionStopError,
     TargetNotFoundError,
 )
-from services import WhatsAppNotificationService, WhatsAppSessionService
+from services import WhatsAppSessionService
 
 logger = logging.getLogger(__name__)
 
@@ -108,28 +107,6 @@ class NotificationHandler:
             message="Sessão do WhatsApp Web encerrada com sucesso.",
         )
 
-    async def send_and_close(
-        self,
-        payload: SendAndCloseNotificationRequest | None,
-    ) -> NotificationResponse:
-        started_at = time.perf_counter()
-        request_payload = payload or SendAndCloseNotificationRequest()
-        config = self._load_request_config(request_payload)
-
-        logger.info("Requisição recebida para envio ao destino: %s", config.target_name)
-
-        try:
-            async with self._operation_lock:
-                if self._session_service.is_open:
-                    await run_in_threadpool(self._session_service.send, config)
-                    await run_in_threadpool(self._session_service.stop)
-                else:
-                    await run_in_threadpool(self._send_message_and_close, config)
-        except Exception as exc:
-            self._raise_api_error(exc)
-
-        return self._notification_response(config=config, started_at=started_at)
-
     @staticmethod
     def _load_request_config(payload: NotificationRequest) -> AppConfig:
         try:
@@ -167,10 +144,6 @@ class NotificationHandler:
                 code="CONFIGURACAO_INVALIDA",
                 message=f"Configuração inválida do servidor: {exc}",
             ) from exc
-
-    def _send_message_and_close(self, config: AppConfig) -> None:
-        service = WhatsAppNotificationService(config=config)
-        service.send(target_name=config.target_name, message=config.message)
 
     @staticmethod
     def _notification_response(config: AppConfig, started_at: float) -> NotificationResponse:

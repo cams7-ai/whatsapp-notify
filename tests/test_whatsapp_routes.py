@@ -37,15 +37,6 @@ class FakeRouteHandler:
     async def stop_session(self):
         return SessionResponse(status="ok", message="sessão encerrada")
 
-    async def send_and_close(self, payload):
-        self.payload = payload
-        return NotificationResponse(
-            status="enviado",
-            message="Mensagem enviada com sucesso.",
-            contact=payload.target_name,
-            elapsedTimeInSeconds=0.2,
-        )
-
 
 @pytest.mark.anyio
 async def test_whatsapp_routes_delegate_to_handler(monkeypatch):
@@ -58,10 +49,6 @@ async def test_whatsapp_routes_delegate_to_handler(monkeypatch):
         qr_code = await client.get("/whatsapp/session/qrcode")
         send = await client.post("/whatsapp/messages/send", json={"contact": "Grupo", "message": "Olá"})
         stop = await client.get("/whatsapp/session/stop")
-        send_and_close = await client.post(
-            "/whatsapp/messages/send-and-close",
-            json={"contact": "Grupo", "message": "Olá", "headless": False},
-        )
 
     assert start.status_code == 200
     assert start.json()["status"] == "ok"
@@ -75,8 +62,6 @@ async def test_whatsapp_routes_delegate_to_handler(monkeypatch):
     assert send.status_code == 200
     assert send.json()["contact"] == "Grupo"
     assert stop.status_code == 200
-    assert send_and_close.status_code == 200
-    assert send_and_close.json()["elapsedTimeInSeconds"] == 0.2
 
 
 @pytest.mark.anyio
@@ -90,6 +75,20 @@ async def test_old_notifications_route_is_not_registered():
     assert "charset=utf-8" in response.headers["content-type"]
     assert response.json()["error"]["code"] == "ROTA_NAO_ENCONTRADA"
     assert response.json()["error"]["message"] == "Rota não encontrada."
+
+
+@pytest.mark.anyio
+async def test_send_and_close_route_is_not_registered():
+    transport = httpx.ASGITransport(app=app, raise_app_exceptions=False)
+
+    async with httpx.AsyncClient(transport=transport, base_url="http://testserver") as client:
+        response = await client.post(
+            "/whatsapp/messages/send-and-close",
+            json={"contact": "Grupo", "message": "Olá", "headless": False},
+        )
+
+    assert response.status_code == 404
+    assert response.json()["error"]["code"] == "ROTA_NAO_ENCONTRADA"
 
 
 @pytest.mark.anyio

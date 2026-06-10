@@ -1,12 +1,12 @@
 ﻿# WhatsApp Notify
 
-API REST em Python 3.12 para controlar uma sessao do WhatsApp Web e enviar mensagens usando FastAPI e Playwright.
+API REST em Python 3.12 para controlar uma sessão do WhatsApp Web e enviar mensagens usando FastAPI e Playwright.
 
-A aplicacao usa um perfil persistente do Chromium para reutilizar a sessao autenticada. Na primeira execucao, ou quando a sessao expirar, sera necessario escanear o QR Code no WhatsApp Web.
+A aplicação usa um perfil persistente do Chromium para reutilizar a sessão autenticada. Na primeira execução, ou quando a sessão expirar, será necessário escanear o "QR Code" no WhatsApp Web.
 
 ## Arquitetura
 
-O projeto segue Clean Architecture com separacao entre API, aplicacao, dominio e infraestrutura.
+O projeto segue Clean Architecture com separação entre API, aplicação, domínio e infraestrutura.
 
 ```text
 Presentation  -> src/api/, src/main.py
@@ -53,18 +53,18 @@ API_PORT=8000
 LOG_LEVEL=INFO
 ```
 
-Variaveis principais:
+Variáveis principais:
 
-- `WHATSAPP_TARGET_NAME`: contato ou grupo usado quando `contact` nao for enviado na requisicao.
-- `WHATSAPP_MESSAGE`: mensagem usada quando `message` nao for enviada na requisicao.
-- `WHATSAPP_HEADLESS`: use `false` na primeira autenticacao para visualizar o QR Code.
-- `WHATSAPP_PROFILE_DIR`: diretorio do perfil persistente do Chromium.
-- `WHATSAPP_TIMEOUT_SECONDS`: timeout maximo para autenticacao, busca e envio.
+- `WHATSAPP_TARGET_NAME`: contato ou grupo usado quando `contact` não for enviado na requisição.
+- `WHATSAPP_MESSAGE`: mensagem usada quando `message` não for enviada na requisição.
+- `WHATSAPP_HEADLESS`: use `false` na primeira autenticação para visualizar o "QR Code".
+- `WHATSAPP_PROFILE_DIR`: diretório do perfil persistente do Chromium.
+- `WHATSAPP_TIMEOUT_SECONDS`: timeout máximo para autenticação, busca e envio.
 - `API_HOST`: host do servidor FastAPI.
 - `API_PORT`: porta do servidor FastAPI.
-- `LOG_LEVEL`: nivel minimo de log da aplicacao (`DEBUG`, `INFO`, `WARNING`, `ERROR`).
+- `LOG_LEVEL`: nível minimo de "log" da aplicação (`DEBUG`, `INFO`, `WARNING`, `ERROR`).
 
-## Execucao
+## Execução
 
 ```bash
 python -m main
@@ -78,13 +78,13 @@ whatsapp-notify
 
 ## API
 
-### Iniciar sessao
+### Iniciar sessão
 
 ```http
 GET /whatsapp/session/start?headless=false&timeoutInSecounds=60
 ```
 
-Abre o navegador e mantem a sessao ativa. Se for necessario autenticar, o navegador fica na tela do QR Code para que `/whatsapp/session/qrcode` possa retornar a imagem. Se `headless` nao for informado, a API usa `WHATSAPP_HEADLESS`. Se `timeoutInSecounds` nao for informado, a API usa `WHATSAPP_TIMEOUT_SECONDS`.
+Abre o navegador e mantém a sessão ativa. Se for necessario autenticar, o navegador fica na tela do "QR Code" para que `/whatsapp/session/qrcode` possa retornar a imagem. Se `headless` não for informado, a API usa `WHATSAPP_HEADLESS`. Se `timeoutInSecounds` não for informado, a API usa `WHATSAPP_TIMEOUT_SECONDS`.
 
 ### Capturar QR Code
 
@@ -92,42 +92,33 @@ Abre o navegador e mantem a sessao ativa. Se for necessario autenticar, o navega
 GET /whatsapp/session/qrcode
 ```
 
-Usa a sessao do WhatsApp Web ja aberta, captura o QR Code visivel e retorna a imagem em PNG. Funciona com sessoes abertas em `headless=false` e `headless=true`. Se nao houver sessao aberta, retorna o mesmo erro de `/whatsapp/messages/send`: `SESSAO_FECHADA`. Se a sessao existir, mas o QR Code nao estiver disponivel, retorna erro JSON com `QR_CODE_NAO_ENCONTRADO`.
+Usa a sessão do WhatsApp Web já aberta, captura o QR Code visivel e retorna a imagem em PNG. Funciona com sessoes abertas em `headless=false` e `headless=true`. Se não houver sessão aberta, retorna o mesmo erro de `/whatsapp/messages/send`: `SESSAO_FECHADA`. Se a sessão existir, mas o "QR Code" não estiver disponivel, retorna erro JSON com `QR_CODE_NAO_ENCONTRADO`.
 
-A captura do QR Code usa uma espera curta para nao bloquear a requisicao pelo timeout completo da sessao.
+A captura do "QR Code" usa uma espera curta para não bloquear a requisição pelo timeout completo da sessão.
 
 Headers relevantes da resposta:
 
 - `Content-Type: image/png`
-- `X-QRCode-Expires-In-Seconds`: janela estimada de validade do QR Code, em segundos.
-- `X-QRCode-Expires-At`: data/hora UTC estimada de expiracao do QR Code.
+- `X-QRCode-Expires-In-Seconds`: janela estimada de validade do "QR Code", em segundos.
+- `X-QRCode-Expires-At`: data/hora UTC estimada de expiração do "QR Code".
 - `Cache-Control: no-store`
 
-### Enviar mensagem com sessao aberta
+### Enviar mensagem com sessão aberta
 
 ```http
 POST /whatsapp/messages/send
 Content-Type: application/json
 ```
 
-Envia mensagem usando uma sessao ja aberta e autenticada. Nao abre nem fecha o navegador.
+Envia mensagem usando uma sessão já aberta e autenticada. Não abre nem fecha o navegador.
 
-### Encerrar sessao
+### Encerrar sessão
 
 ```http
 GET /whatsapp/session/stop
 ```
 
-Fecha a sessao ativa e o navegador associado.
-
-### Enviar mensagem e fechar
-
-```http
-POST /whatsapp/messages/send-and-close
-Content-Type: application/json
-```
-
-Se ja houver sessao aberta, envia por ela e encerra a sessao. Caso contrario, abre o WhatsApp Web, autentica quando necessario, envia a mensagem e fecha o navegador.
+Fecha a sessão ativa e o navegador associado.
 
 Corpo aceito pelos endpoints de envio:
 
@@ -140,18 +131,7 @@ Corpo aceito pelos endpoints de envio:
 
 `contact` e `message` sao opcionais se os valores equivalentes estiverem configurados no `.env`.
 
-O endpoint `POST /whatsapp/messages/send-and-close` tambem aceita `headless`, opcional, para sobrescrever `WHATSAPP_HEADLESS` apenas quando precisar abrir navegador:
-
-```json
-{
-  "contact": "Grupo Teste",
-  "message": "Ola pelo WhatsApp Notify",
-  "headless": false,
-  "timeoutInSecounds": 60
-}
-```
-
-`timeoutInSecounds` sobrescreve `WHATSAPP_TIMEOUT_SECONDS` apenas para esta operacao. Quando ausente, a API usa `WHATSAPP_TIMEOUT_SECONDS`.
+O campo `headless` e aceito apenas em `GET /whatsapp/session/start`. O endpoint de envio usa sempre a sessão já aberta.
 
 Resposta de envio:
 
@@ -164,7 +144,7 @@ Resposta de envio:
 }
 ```
 
-Resposta de sessao:
+Resposta de sessão:
 
 ```json
 {
@@ -184,7 +164,7 @@ Resposta de erro:
 }
 ```
 
-Documentacao gerada pelo FastAPI:
+Documentação gerada pelo FastAPI:
 
 - Swagger UI: `http://localhost:8000/docs`
 - ReDoc: `http://localhost:8000/redoc`
@@ -196,13 +176,15 @@ Documentacao gerada pelo FastAPI:
 .\.venv\Scripts\python.exe -m pytest --cov=src --cov-report=term-missing -q
 ```
 
-Os testes nunca devem acessar a pagina oficial do WhatsApp Web; use mocks, fakes ou paginas virtuais para simular qualquer comportamento do navegador.
+Os testes nunca devem acessar a página oficial do WhatsApp Web; use mocks, fakes ou paginas virtuais para simular qualquer comportamento do navegador.
 
-## Observacoes Operacionais
+O relatorio de cobertura exige 100% dos modulos unit-testáveis em `src`. A automação Playwright (`src/whatsapp_service.py`) e entrypoints de execução são excluídos da metrica por dependerem de navegador real ou bootstrap do processo.
+
+## Observações Operacionais
 
 - O envio e confirmado depois que o WhatsApp Web aceita visualmente a mensagem ou esvazia o compositor sem erro/pendencia visivel.
-- Os endpoints de sessao mantem um navegador ativo no processo da API.
-- Os envios sao serializados por processo para evitar disputa pelo mesmo perfil persistente.
-- Use apenas um worker por instancia quando compartilhar o mesmo `WHATSAPP_PROFILE_DIR`.
-- Mudancas na interface do WhatsApp Web podem exigir atualizacao de seletores em `src/whatsapp_service.py`.
-- A automacao usa WhatsApp Web diretamente no navegador; nao usa bibliotecas nao oficiais baseadas em engenharia reversa do WhatsApp.
+- Os endpoints de sessão mantém um navegador ativo no processo da API.
+- Os envios são serializados por processo para evitar disputa pelo mesmo perfil persistente.
+- Use apenas um worker por instância quando compartilhar o mesmo `WHATSAPP_PROFILE_DIR`.
+- Mudanças na "interface" do WhatsApp Web podem exigir atualizacao de seletores em `src/whatsapp_service.py`.
+- A automação usa WhatsApp Web diretamente no navegador; não usa bibliotecas não oficiais baseadas em engenharia reversa do WhatsApp.

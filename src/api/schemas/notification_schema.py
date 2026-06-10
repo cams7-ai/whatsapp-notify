@@ -40,30 +40,6 @@ class NotificationRequest(BaseModel):
     )
 
 
-class SendAndCloseNotificationRequest(NotificationRequest, TimeoutPayload):
-    """Corpo opcional para o fluxo que pode abrir navegador."""
-
-    model_config = ConfigDict(
-        extra="forbid",
-        json_schema_extra={
-            "examples": [
-                {
-                    "contact": "Grupo Teste",
-                    "message": "Mensagem enviada pela API",
-                    "headless": False,
-                    "timeoutInSecounds": 60,
-                },
-                {},
-            ]
-        },
-    )
-
-    headless: bool | None = Field(
-        default=None,
-        description="Sobrescreve WHATSAPP_HEADLESS neste envio, quando informado.",
-    )
-
-
 class NotificationResponse(BaseModel):
     model_config = ConfigDict(
         populate_by_name=True,

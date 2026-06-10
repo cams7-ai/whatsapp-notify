@@ -10,7 +10,6 @@ from api.schemas import (
     ErrorResponse,
     NotificationRequest,
     NotificationResponse,
-    SendAndCloseNotificationRequest,
     SessionResponse,
 )
 
@@ -100,21 +99,3 @@ async def send_whatsapp_message(
 )
 async def stop_whatsapp_session() -> SessionResponse:
     return await notification_handler.stop_session()
-
-
-@router.post(
-    "/messages/send-and-close",
-    response_model=NotificationResponse,
-    summary="Enviar mensagem e encerrar sessão",
-    description=(
-        "Se já houver sessão aberta, envia por ela e encerra a sessão. "
-        "Caso contrário, abre o WhatsApp Web, autentica quando necessário, "
-        "envia a mensagem e fecha o navegador."
-    ),
-    operation_id="sendWhatsAppMessageAndClose",
-    responses=ERROR_RESPONSES,
-)
-async def send_whatsapp_message_and_close(
-    payload: SendAndCloseNotificationRequest | None = Body(default=None),
-) -> NotificationResponse:
-    return await notification_handler.send_and_close(payload)

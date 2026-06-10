@@ -34,3 +34,14 @@ python_classes = "Test*"
 python_functions = "test_*"
 addopts = "-v --tb=short"
 
+[tool.coverage.run]
+omit = [
+    "src/__init__.py",
+    "src/main.py",
+    "src/whatsapp_service.py",
+]
+
+[tool.coverage.report]
+fail_under = 100
+show_missing = true
+

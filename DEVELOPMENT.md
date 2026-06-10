@@ -30,8 +30,9 @@ No Windows, se o Python global nao tiver `pytest`, use o ambiente virtual local:
 
 - Nunca acesse `https://web.whatsapp.com` durante testes automatizados.
 - Simule Playwright e WhatsApp Web com mocks, fakes ou paginas virtuais.
-- Cubra novos endpoints, handlers e servicos com testes isolados.
-- Mantenha cobertura relevante de `src` sem testes artificiais que apenas executem linhas.
+- Cubra novos endpoints, handlers e serviços com testes isolados.
+- Mantenha 100% de cobertura nos modulos unit-testáveis medidos em `src`.
+- A automação Playwright e entrypoints de bootstrap ficam fora da metrica de cobertura por exigirem navegador real ou processo em execução.
 
 ## Estrutura de Testes
 
@@ -46,14 +47,13 @@ tests/
 
 ## Fluxos Principais
 
-- `GET /whatsapp/session/start`: abre sessao persistente.
-- `POST /whatsapp/messages/send`: envia usando sessao aberta.
-- `GET /whatsapp/session/stop`: fecha sessao persistente.
-- `POST /whatsapp/messages/send-and-close`: executa o fluxo completo antigo de `/notifications`.
+- `GET /whatsapp/session/start`: abre sessão persistente.
+- `POST /whatsapp/messages/send`: envia usando sessão aberta.
+- `GET /whatsapp/session/stop`: fecha sessão persistente.
 
-## Regras Praticas
+## Regras Práticas
 
-- Nao coloque seletores de UI em servicos de dominio.
-- Nao acesse FastAPI dentro de `domain/` ou `services/`.
-- Handlers devem delegar logica aos servicos.
-- Use apenas um worker por instancia quando compartilhar o mesmo perfil do Chromium.
+- Não coloque seletores de UI em serviços de dominio.
+- Não acesse FastAPI dentro de `domain/` ou `services/`.
+- Handlers devem delegar logica aos serviços.
+- Use apenas um worker por instância quando compartilhar o mesmo perfil do Chromium.
