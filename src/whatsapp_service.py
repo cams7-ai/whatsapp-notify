@@ -11,6 +11,7 @@ from playwright.sync_api import Error as PlaywrightError
 from playwright.sync_api import Locator, Page, ViewportSize, sync_playwright
 
 from config import AppConfig
+from domain import SessionStatus
 
 
 WHATSAPP_WEB_URL = "https://web.whatsapp.com"
@@ -89,6 +90,12 @@ class PersistentWhatsAppSession:
             )
 
         return qr_code
+
+    def get_status(self) -> SessionStatus:
+        if not self.is_open or self._page is None:
+            return SessionStatus.SESSAO_FECHADA
+
+        return self._service.get_session_status(self._page)
 
     def send(self, target_name: str, message: str) -> None:
         if self._page is None:
@@ -519,6 +526,32 @@ class WhatsAppService:
             return qr_locator.screenshot()
         except PlaywrightError:
             return None
+
+    def get_session_status(self, page: Page) -> SessionStatus:
+        if self._is_any_selector_visible(page, self._authenticated_selectors, timeout_ms=300):
+            return SessionStatus.SESSAO_ABERTA
+        if self._is_any_selector_visible(page, self._qr_code_selectors, timeout_ms=300):
+            return SessionStatus.AGUARDANDO_AUTENTICACAO
+        if self._is_loading_chats_visible(page):
+            return SessionStatus.CARREGANDO_CONVERSAS
+
+        return SessionStatus.INICIANDO_SESSAO
+
+    def _is_loading_chats_visible(self, page: Page) -> bool:
+        loading_patterns = (
+            "Carregando suas conversas",
+            "Carregando conversas",
+            "Loading your chats",
+            "Loading chats",
+        )
+        for text in loading_patterns:
+            try:
+                if page.get_by_text(text).first.is_visible(timeout=300):
+                    return True
+            except PlaywrightError:
+                continue
+
+        return False
 
     def _open_target_conversation(self, page: Page) -> None:
         logger.info("Buscando contato ou grupo: %s", self.config.target_name)

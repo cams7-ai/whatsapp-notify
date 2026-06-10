@@ -12,6 +12,7 @@ from domain import (
     SessionAlreadyOpenError,
     SessionClosedError,
     SessionStartError,
+    SessionStatus,
     SessionStopError,
     TargetNotFoundError,
 )
@@ -59,6 +60,15 @@ class WhatsAppSessionService:
             raise SessionStartError("Não foi possível abrir a sessão do WhatsApp Web.") from exc
 
         self._session = session
+
+    def status(self) -> SessionStatus:
+        if self._session is None:
+            return SessionStatus.SESSAO_FECHADA
+        if not self._session.is_open:
+            self._session = None
+            return SessionStatus.SESSAO_FECHADA
+
+        return self._session.get_status()
 
     def send(self, config: AppConfig) -> None:
         if not self.is_open or self._session is None:

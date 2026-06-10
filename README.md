@@ -103,6 +103,56 @@ Headers relevantes da resposta:
 - `X-QRCode-Expires-At`: data/hora UTC estimada de expiração do "QR Code".
 - `Cache-Control: no-store`
 
+### Consultar status da sessão
+
+```http
+GET /whatsapp/session/status
+```
+
+Consulta o estado atual da sessão sem abrir navegador, fechar navegador, capturar imagem do QR Code, aguardar autenticação completa ou executar envio.
+
+Respostas possíveis:
+
+```json
+{
+  "status": "SESSAO_FECHADA",
+  "message": "Sessão do WhatsApp Web fechada.",
+  "isOpen": false
+}
+```
+
+```json
+{
+  "status": "INICIANDO_SESSAO",
+  "message": "Sessão do WhatsApp Web iniciando.",
+  "isOpen": false
+}
+```
+
+```json
+{
+  "status": "AGUARDANDO_AUTENTICACAO",
+  "message": "Aguardando autenticação do WhatsApp Web.",
+  "isOpen": true
+}
+```
+
+```json
+{
+  "status": "CARREGANDO_CONVERSAS",
+  "message": "Carregando conversas do WhatsApp Web.",
+  "isOpen": true
+}
+```
+
+```json
+{
+  "status": "SESSAO_ABERTA",
+  "message": "Sessão do WhatsApp Web aberta.",
+  "isOpen": true
+}
+```
+
 ### Enviar mensagem com sessão aberta
 
 ```http

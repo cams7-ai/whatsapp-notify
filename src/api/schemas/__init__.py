@@ -3,6 +3,7 @@ from api.schemas.notification_schema import (
     NotificationRequest,
     NotificationResponse,
     SessionResponse,
+    SessionStatusResponse,
 )
 
 __all__ = [
@@ -10,4 +11,5 @@ __all__ = [
     "NotificationRequest",
     "NotificationResponse",
     "SessionResponse",
+    "SessionStatusResponse",
 ]

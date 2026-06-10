@@ -15,6 +15,7 @@ from api.schemas.notification_schema import (
     NotificationRequest,
     NotificationResponse,
     SessionResponse,
+    SessionStatusResponse,
 )
 from config import AppConfig, ConfigError, MissingRequiredValueError, load_config, load_session_config
 from domain import (
@@ -25,6 +26,7 @@ from domain import (
     SessionAlreadyOpenError,
     SessionClosedError,
     SessionStartError,
+    SessionStatus,
     SessionStopError,
     TargetNotFoundError,
 )
@@ -77,6 +79,23 @@ class NotificationHandler:
                 "Cache-Control": "no-store",
                 "X-QRCode-Expires-In-Seconds": str(expires_in_seconds),
                 "X-QRCode-Expires-At": expires_at.isoformat(),
+            },
+        )
+
+    async def get_session_status(self) -> SessionStatusResponse:
+        try:
+            status_result = await run_in_threadpool(self._session_service.status)
+        except Exception as exc:
+            self._raise_api_error(exc)
+
+        return SessionStatusResponse(
+            status=status_result.value,
+            message=status_result.message,
+            isOpen=status_result
+            in {
+                SessionStatus.AGUARDANDO_AUTENTICACAO,
+                SessionStatus.CARREGANDO_CONVERSAS,
+                SessionStatus.SESSAO_ABERTA,
             },
         )
 

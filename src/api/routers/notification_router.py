@@ -11,6 +11,7 @@ from api.schemas import (
     NotificationRequest,
     NotificationResponse,
     SessionResponse,
+    SessionStatusResponse,
 )
 
 
@@ -70,6 +71,21 @@ async def start_whatsapp_session(
 )
 async def get_whatsapp_session_qrcode():
     return await notification_handler.get_qr_code()
+
+
+@router.get(
+    "/session/status",
+    response_model=SessionStatusResponse,
+    summary="Consultar status da sessão do WhatsApp Web",
+    description=(
+        "Consulta o status atual da sessão do WhatsApp Web sem abrir navegador, "
+        "fechar navegador, capturar QR Code ou aguardar autenticação completa."
+    ),
+    operation_id="getWhatsAppSessionStatus",
+    responses=ERROR_RESPONSES,
+)
+async def get_whatsapp_session_status() -> SessionStatusResponse:
+    return await notification_handler.get_session_status()
 
 
 @router.post(

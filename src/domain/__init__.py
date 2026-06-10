@@ -12,6 +12,7 @@ from domain.exceptions.error import (
     TargetNotFoundError,
 )
 from domain.models.notification import Notification
+from domain.models.session_status import SessionStatus
 
 __all__ = [
     "DomainError",
@@ -24,4 +25,5 @@ __all__ = [
     "SessionStartError",
     "SessionStopError",
     "Notification",
+    "SessionStatus",
 ]

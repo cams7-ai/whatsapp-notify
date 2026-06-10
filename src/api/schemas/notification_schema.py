@@ -78,3 +78,22 @@ class SessionResponse(BaseModel):
 
     status: str
     message: str
+
+
+class SessionStatusResponse(BaseModel):
+    model_config = ConfigDict(
+        populate_by_name=True,
+        json_schema_extra={
+            "examples": [
+                {
+                    "status": "SESSAO_FECHADA",
+                    "message": "Sessão do WhatsApp Web fechada.",
+                    "isOpen": False,
+                }
+            ]
+        },
+    )
+
+    status: str
+    message: str
+    is_open: bool = Field(alias="isOpen")

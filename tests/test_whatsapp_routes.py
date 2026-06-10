@@ -5,7 +5,7 @@ import pytest
 from fastapi import Response
 
 from api.server import app
-from api.schemas.notification_schema import NotificationResponse, SessionResponse
+from api.schemas.notification_schema import NotificationResponse, SessionResponse, SessionStatusResponse
 
 router_module = import_module("api.routers.notification_router")
 
@@ -23,6 +23,13 @@ class FakeRouteHandler:
             headers={
                 "x-qrcode-expires-in-seconds": "60",
             },
+        )
+
+    async def get_session_status(self):
+        return SessionStatusResponse(
+            status="SESSAO_FECHADA",
+            message="Sessão do WhatsApp Web fechada.",
+            isOpen=False,
         )
 
     async def send_with_open_session(self, payload):
@@ -47,6 +54,7 @@ async def test_whatsapp_routes_delegate_to_handler(monkeypatch):
     async with httpx.AsyncClient(transport=transport, base_url="http://testserver") as client:
         start = await client.get("/whatsapp/session/start?headless=true&timeoutInSecounds=15")
         qr_code = await client.get("/whatsapp/session/qrcode")
+        session_status = await client.get("/whatsapp/session/status")
         send = await client.post("/whatsapp/messages/send", json={"contact": "Grupo", "message": "Olá"})
         stop = await client.get("/whatsapp/session/stop")
 
@@ -59,6 +67,12 @@ async def test_whatsapp_routes_delegate_to_handler(monkeypatch):
     assert qr_code.status_code == 200
     assert qr_code.content == b"PNG"
     assert qr_code.headers["x-qrcode-expires-in-seconds"] == "60"
+    assert session_status.status_code == 200
+    assert session_status.json() == {
+        "status": "SESSAO_FECHADA",
+        "message": "Sessão do WhatsApp Web fechada.",
+        "isOpen": False,
+    }
     assert send.status_code == 200
     assert send.json()["contact"] == "Grupo"
     assert stop.status_code == 200

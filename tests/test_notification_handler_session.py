@@ -3,7 +3,7 @@
 from api.exceptions import ApiError
 from api.handlers.notification_handler import NotificationHandler
 from api.schemas.notification_schema import NotificationRequest
-from domain import QRCodeNotFoundError, SessionAlreadyOpenError, SessionClosedError
+from domain import QRCodeNotFoundError, SessionAlreadyOpenError, SessionClosedError, SessionStatus
 
 class FakeSessionService:
     def __init__(self):
@@ -17,6 +17,7 @@ class FakeSessionService:
         self.start_error = None
         self.send_error = None
         self.stop_error = None
+        self.status_result = SessionStatus.SESSAO_FECHADA
 
     def start(self, config):
         if self.start_error:
@@ -41,6 +42,9 @@ class FakeSessionService:
             raise self.stop_error
         self.is_open = False
         self.stopped += 1
+
+    def status(self):
+        return self.status_result
 
 
 @pytest.fixture
@@ -123,6 +127,50 @@ async def test_get_qr_code_maps_closed_session(handler, env):
 
     assert error.value.status_code == 400
     assert error.value.code == "SESSAO_FECHADA"
+
+
+@pytest.mark.anyio
+async def test_get_session_status_returns_closed_with_http_schema(handler, session_service):
+    response = await handler.get_session_status()
+
+    assert response.status == "SESSAO_FECHADA"
+    assert response.message == "Sessão do WhatsApp Web fechada."
+    assert response.is_open is False
+
+
+@pytest.mark.anyio
+async def test_get_session_status_returns_open_status(handler, session_service):
+    session_service.status_result = SessionStatus.SESSAO_ABERTA
+
+    response = await handler.get_session_status()
+
+    assert response.status == "SESSAO_ABERTA"
+    assert response.message == "Sessão do WhatsApp Web aberta."
+    assert response.is_open is True
+
+
+@pytest.mark.anyio
+async def test_get_session_status_returns_starting_as_not_open(handler, session_service):
+    session_service.status_result = SessionStatus.INICIANDO_SESSAO
+
+    response = await handler.get_session_status()
+
+    assert response.status == "INICIANDO_SESSAO"
+    assert response.is_open is False
+
+
+@pytest.mark.anyio
+async def test_get_session_status_maps_unexpected_error(handler, session_service):
+    def broken_status():
+        raise RuntimeError("boom")
+
+    session_service.status = broken_status
+
+    with pytest.raises(ApiError) as error:
+        await handler.get_session_status()
+
+    assert error.value.status_code == 500
+    assert error.value.code == "ERRO_INTERNO"
 
 
 @pytest.mark.anyio

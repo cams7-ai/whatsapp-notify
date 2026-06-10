@@ -8,6 +8,7 @@ from domain import (
     SessionAlreadyOpenError,
     SessionClosedError,
     SessionStartError,
+    SessionStatus,
     SessionStopError,
     TargetNotFoundError,
 )
@@ -21,6 +22,7 @@ class FakePersistentSession:
     stop_error = None
     qr_error = None
     qr_code = b"PNG"
+    status_result = SessionStatus.SESSAO_ABERTA
 
     def __init__(self, config):
         self.config = config
@@ -48,6 +50,9 @@ class FakePersistentSession:
         self.is_open = True
         return self.qr_code
 
+    def get_status(self):
+        return self.status_result
+
 
 @pytest.fixture(autouse=True)
 def reset_fake_session(monkeypatch):
@@ -56,6 +61,7 @@ def reset_fake_session(monkeypatch):
     FakePersistentSession.stop_error = None
     FakePersistentSession.qr_error = None
     FakePersistentSession.qr_code = b"PNG"
+    FakePersistentSession.status_result = SessionStatus.SESSAO_ABERTA
     monkeypatch.setattr(session_module, "PersistentWhatsAppSession", FakePersistentSession)
 
 
@@ -79,6 +85,25 @@ def test_start_opens_persistent_session(service, config):
     service.start(config)
 
     assert service.is_open
+
+
+def test_status_returns_closed_before_start(service):
+    assert service.status() == SessionStatus.SESSAO_FECHADA
+
+
+def test_status_delegates_to_open_persistent_session(service, config):
+    FakePersistentSession.status_result = SessionStatus.AGUARDANDO_AUTENTICACAO
+    service.start(config)
+
+    assert service.status() == SessionStatus.AGUARDANDO_AUTENTICACAO
+
+
+def test_status_clears_closed_persistent_session(service, config):
+    service.start(config)
+    service._session.is_open = False
+
+    assert service.status() == SessionStatus.SESSAO_FECHADA
+    assert service._session is None
 
 
 def test_start_rejects_existing_open_session(service, config):
@@ -185,6 +210,98 @@ def test_persistent_session_capture_qr_code_uses_short_timeout(monkeypatch, conf
 
     assert session.capture_qr_code() == b"PNG"
     assert captured["timeout_ms"] == whatsapp_module.QR_CODE_CAPTURE_TIMEOUT_MS
+
+
+def test_persistent_session_status_returns_closed_without_page(config):
+    import whatsapp_service as whatsapp_module
+
+    session = whatsapp_module.PersistentWhatsAppSession(config)
+
+    assert session.get_status() == SessionStatus.SESSAO_FECHADA
+
+
+def test_persistent_session_status_delegates_to_service(monkeypatch, config):
+    import whatsapp_service as whatsapp_module
+
+    session = whatsapp_module.PersistentWhatsAppSession(config)
+    session._page = object()
+    session._context = object()
+    session._playwright = object()
+
+    monkeypatch.setattr(
+        whatsapp_module.WhatsAppService,
+        "get_session_status",
+        lambda self, page: SessionStatus.SESSAO_ABERTA,
+    )
+
+    assert session.get_status() == SessionStatus.SESSAO_ABERTA
+
+
+def test_whatsapp_service_status_identifies_qr_code(monkeypatch, config):
+    import whatsapp_service as whatsapp_module
+
+    service = whatsapp_module.WhatsAppService(config)
+
+    def fake_visible(page, selectors, timeout_ms):
+        return selectors == service._qr_code_selectors
+
+    monkeypatch.setattr(service, "_is_any_selector_visible", fake_visible)
+    monkeypatch.setattr(service, "_is_loading_chats_visible", lambda page: False)
+
+    assert service.get_session_status(object()) == SessionStatus.AGUARDANDO_AUTENTICACAO
+
+
+def test_whatsapp_service_status_identifies_authenticated_screen(monkeypatch, config):
+    import whatsapp_service as whatsapp_module
+
+    service = whatsapp_module.WhatsAppService(config)
+
+    def fake_visible(page, selectors, timeout_ms):
+        return selectors == service._authenticated_selectors
+
+    monkeypatch.setattr(service, "_is_any_selector_visible", fake_visible)
+    monkeypatch.setattr(service, "_is_loading_chats_visible", lambda page: False)
+
+    assert service.get_session_status(object()) == SessionStatus.SESSAO_ABERTA
+
+
+def test_whatsapp_service_status_identifies_loading_chats(monkeypatch, config):
+    import whatsapp_service as whatsapp_module
+
+    service = whatsapp_module.WhatsAppService(config)
+    monkeypatch.setattr(service, "_is_any_selector_visible", lambda page, selectors, timeout_ms: False)
+    monkeypatch.setattr(service, "_is_loading_chats_visible", lambda page: True)
+
+    assert service.get_session_status(object()) == SessionStatus.CARREGANDO_CONVERSAS
+
+
+def test_persistent_session_status_does_not_call_mutating_flows(monkeypatch, config):
+    import whatsapp_service as whatsapp_module
+
+    forbidden = (
+        "_wait_for_authentication",
+        "_open_target_conversation",
+        "_send_configured_message",
+        "_capture_qr_code",
+    )
+    for name in forbidden:
+        monkeypatch.setattr(
+            whatsapp_module.WhatsAppService,
+            name,
+            lambda *args, **kwargs: pytest.fail("mutating flow called"),
+        )
+
+    session = whatsapp_module.PersistentWhatsAppSession(config)
+    session._page = object()
+    session._context = object()
+    session._playwright = object()
+    monkeypatch.setattr(
+        whatsapp_module.WhatsAppService,
+        "get_session_status",
+        lambda self, page: SessionStatus.INICIANDO_SESSAO,
+    )
+
+    assert session.get_status() == SessionStatus.INICIANDO_SESSAO
 
 
 def test_persistent_session_start_does_not_wait_for_authentication(monkeypatch, config):
