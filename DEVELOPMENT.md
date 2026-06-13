@@ -2,7 +2,7 @@
 
 ## Instalar Dependencias
 
-```bash
+```powershell
 pip install -e ".[dev]"
 ```
 
@@ -10,13 +10,13 @@ Isso instala a aplicacao em modo editavel e inclui `pytest` e `pytest-cov`.
 
 ## Rodar Testes
 
-```bash
+```powershell
 pytest tests/ -v
 ```
 
 Com relatorio de cobertura:
 
-```bash
+```powershell
 pytest --cov=src --cov-report=term-missing -q
 ```
 

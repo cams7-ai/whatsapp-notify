@@ -6,8 +6,6 @@ import os
 from dataclasses import dataclass
 from pathlib import Path
 
-from dotenv import load_dotenv
-
 
 class ConfigError(RuntimeError):
     """Erro gerado quando uma configuração obrigatória está ausente ou inválida."""
@@ -43,7 +41,7 @@ def load_config(
 ) -> AppConfig:
     """Carrega configurações para um fluxo de envio de mensagem."""
 
-    _, base_dir = _load_environment(env_file)
+    base_dir = _environment_base_dir(env_file)
     return AppConfig(
         target_name=_request_value_or_required_env(
             request_value=target_name,
@@ -71,7 +69,7 @@ def load_session_config(
 ) -> AppConfig:
     """Carrega configurações para abrir uma sessão sem exigir contato ou mensagem."""
 
-    _, base_dir = _load_environment(env_file)
+    base_dir = _environment_base_dir(env_file)
     return AppConfig(
         target_name="",
         message="",
@@ -82,17 +80,9 @@ def load_session_config(
         else _parse_positive_int("WHATSAPP_TIMEOUT_SECONDS", default=60),
     )
 
-
-def _load_environment(env_file: Path | None) -> tuple[Path, Path]:
+def _environment_base_dir(env_file: Path | None) -> Path:
     env_path = env_file or Path.cwd() / ".env"
-    base_dir = env_path.parent if env_path.exists() else Path.cwd()
-
-    if env_path.exists():
-        load_dotenv(env_path)
-    else:
-        load_dotenv()
-
-    return env_path, base_dir
+    return env_path.parent if env_path.exists() else Path.cwd()
 
 
 def _request_value_or_required_env(

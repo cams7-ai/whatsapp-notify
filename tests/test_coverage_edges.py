@@ -55,20 +55,14 @@ def test_missing_required_value_error_keeps_context():
     assert "WHATSAPP_TARGET_NAME" in str(error)
 
 
-def test_load_config_uses_env_file_and_request_overrides(tmp_path):
+def test_load_config_uses_environment_and_request_overrides(tmp_path, monkeypatch):
     env_file = tmp_path / ".env"
-    env_file.write_text(
-        "\n".join(
-            [
-                "WHATSAPP_TARGET_NAME=Env Contact",
-                "WHATSAPP_MESSAGE=Env Message",
-                "WHATSAPP_HEADLESS=yes",
-                "WHATSAPP_PROFILE_DIR=profile",
-                "WHATSAPP_TIMEOUT_SECONDS=9",
-            ]
-        ),
-        encoding="utf-8",
-    )
+    env_file.touch()
+    monkeypatch.setenv("WHATSAPP_TARGET_NAME", "Env Contact")
+    monkeypatch.setenv("WHATSAPP_MESSAGE", "Env Message")
+    monkeypatch.setenv("WHATSAPP_HEADLESS", "yes")
+    monkeypatch.setenv("WHATSAPP_PROFILE_DIR", "profile")
+    monkeypatch.setenv("WHATSAPP_TIMEOUT_SECONDS", "9")
 
     loaded = load_config(
         env_file,

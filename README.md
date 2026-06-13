@@ -25,7 +25,7 @@ Detalhes completos ficam em [ARCHITECTURE.md](./ARCHITECTURE.md).
 
 ## Instalacao
 
-```bash
+```powershell
 python -m venv .venv
 .\.venv\Scripts\activate
 pip install -e ".[dev]"
@@ -34,7 +34,7 @@ playwright install chromium
 
 Em Linux/macOS, adapte a ativacao do ambiente virtual:
 
-```bash
+```powershell
 source .venv/bin/activate
 ```
 
@@ -66,13 +66,13 @@ Variáveis principais:
 
 ## Execução
 
-```bash
+```powershell
 python -m main
 ```
 
 Ou, apos instalar o pacote:
 
-```bash
+```powershell
 whatsapp-notify
 ```
 
@@ -222,7 +222,7 @@ Documentação gerada pelo FastAPI:
 
 ## Testes
 
-```bash
+```powershell
 .\.venv\Scripts\python.exe -m pytest --cov=src --cov-report=term-missing -q
 ```
 
