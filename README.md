@@ -13,6 +13,7 @@ API REST para controlar uma sessão persistente do WhatsApp Web e enviar mensage
 - [Estrutura do Projeto](#estrutura-do-projeto)
 - [Configuração](#configuração)
 - [Execução Local](#execução-local)
+- [Implantação na AWS](#implantação-na-aws)
 - [Contrato da API](#contrato-da-api)
 - [Testes](#testes)
 - [Observações Operacionais](#observações-operacionais)
@@ -196,7 +197,7 @@ python -m venv .venv
 Instale as dependências:
 
 ```powershell
-pip install -e ".[dev]"
+python -m pip install -e ".[dev]"
 ```
 
 Instale o Chromium usado pelo Playwright:
@@ -225,6 +226,48 @@ URLs locais:
 | Swagger UI | `http://localhost:8000/docs` |
 | ReDoc | `http://localhost:8000/redoc` |
 | OpenAPI JSON | `http://localhost:8000/openapi.json` |
+
+## Implantação na AWS
+
+O projeto inclui infraestrutura como código para executar a API em uma única
+instância EC2, preservando o processo do Chromium e o perfil autenticado entre
+as requisições.
+
+| Componente | Responsabilidade |
+| --- | --- |
+| `template.yaml` | Provisiona EC2, EBS criptografado, Security Group, IAM, Session Manager e budget via SAM/CloudFormation. |
+| `samconfig.local.toml` | Exemplo local dos parâmetros de validação e deploy do SAM. |
+| S3 privado | Armazena o ZIP versionado da aplicação usado no bootstrap e nas atualizações. |
+| systemd | Executa um único worker da API e reinicia o serviço após falhas ou reboot. |
+| Nginx | Atua como proxy reverso para a API. |
+| EBS gp3 | Persiste o perfil do Chromium em `/opt/whatsapp-notify/data/.whatsapp-profile`. |
+
+Pré-requisitos: AWS CLI v2, AWS SAM CLI, credenciais AWS configuradas e
+permissões para CloudFormation, EC2, IAM, S3, SSM e Budgets. Antes do deploy,
+copie `samconfig.local.toml` para `samconfig.toml`, preencha os parâmetros locais
+e envie o artefato da aplicação, sem `.env` ou `.whatsapp-profile`, para o bucket
+S3 privado.
+
+Valide e implante:
+
+```powershell
+sam validate --lint
+sam build
+sam deploy
+```
+
+O primeiro deploy deve ser feito com `sam deploy --guided`. Para homologação,
+acesse a API por encaminhamento de porta do AWS Systems Manager Session Manager,
+sem publicá-la diretamente. Para produção, configure HTTPS no Nginx e restrinja
+o Security Group ao CIDR autorizado.
+
+> O AWS Free Tier não garante gratuidade permanente. EC2, EBS, IPv4 público,
+> snapshots, S3 e outros recursos podem gerar cobrança; valide a modalidade e
+> os créditos da conta e mantenha alertas de budget ativos.
+
+Consulte o roteiro completo de preparação, deploy, acesso por SSM, atualização,
+backup, rollback e remoção de recursos em
+[AWS_FREE_TIER_MIGRATION_STEP_BY_STEP.md](./docs/AWS_FREE_TIER_MIGRATION_STEP_BY_STEP.md).
 
 ## Contrato da API
 

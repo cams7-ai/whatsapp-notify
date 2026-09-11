@@ -1,0 +1,324 @@
+AWSTemplateFormatVersion: "2010-09-09"
+Transform: AWS::Serverless-2016-10-31
+Description: WhatsApp Notify on one persistent EC2 instance - preserves browser session state
+
+Metadata:
+  AWSToolsMetrics:
+    AWSAgentToolkit: aws-cloudformation@2
+  com.aws.cloudformation.Context:
+    ref:
+      - at: docs/AWS_FREE_TIER_MIGRATION_STEP_BY_STEP.md
+        has: EC2 architecture and bootstrap constraints
+        scope: stack
+
+Parameters:
+  VpcId:
+    Type: AWS::EC2::VPC::Id
+  SubnetId:
+    Type: AWS::EC2::Subnet::Id
+  AmiId:
+    Type: AWS::EC2::Image::Id
+  InstanceType:
+    Type: String
+    Default: t3.micro
+    AllowedValues:
+      - t3.micro
+      - t3.small
+  AllowedCidr:
+    Type: String
+    AllowedPattern: ^(\d{1,3}\.){3}\d{1,3}/(3[0-2]|[12]?\d)$
+  ArtifactBucket:
+    Type: String
+    AllowedPattern: ^[a-z0-9][a-z0-9.-]{1,61}[a-z0-9]$
+  ArtifactKey:
+    Type: String
+    AllowedPattern: ^whatsapp-notify/releases/[^\\]+\.zip$
+  ArtifactSha256:
+    Type: String
+    AllowedPattern: ^[a-fA-F0-9]{64}$
+  RootVolumeSize:
+    Type: Number
+    Default: 16
+    MinValue: 12
+    MaxValue: 30
+  BudgetEmail:
+    Type: String
+    AllowedPattern: ^[^@\s]+@[^@\s]+\.[^@\s]+$
+  BudgetLimitUsd:
+    Type: Number
+    Default: 5
+    MinValue: 1
+
+Resources:
+  InstanceRole:
+    Type: AWS::IAM::Role
+    Properties:
+      AssumeRolePolicyDocument:
+        Version: "2012-10-17"
+        Statement:
+          - Effect: Allow
+            Principal:
+              Service: ec2.amazonaws.com
+            Action: sts:AssumeRole
+      ManagedPolicyArns:
+        - arn:aws:iam::aws:policy/AmazonSSMManagedInstanceCore
+      Policies:
+        - PolicyName: DownloadApplicationArtifact
+          PolicyDocument:
+            Version: "2012-10-17"
+            Statement:
+              - Effect: Allow
+                Action: s3:GetObject
+                Resource: !Sub "arn:${AWS::Partition}:s3:::${ArtifactBucket}/whatsapp-notify/releases/*"
+      Tags:
+        - Key: Application
+          Value: whatsapp-notify
+
+  InstanceProfile:
+    Type: AWS::IAM::InstanceProfile
+    Properties:
+      Roles:
+        - !Ref InstanceRole
+
+  ApplicationSecurityGroup:
+    Type: AWS::EC2::SecurityGroup
+    Properties:
+      GroupDescription: Restricted HTTPS access for WhatsApp Notify
+      VpcId: !Ref VpcId
+      SecurityGroupIngress:
+        - Description: HTTPS from the authorized client
+          IpProtocol: tcp
+          FromPort: 443
+          ToPort: 443
+          CidrIp: !Ref AllowedCidr
+      SecurityGroupEgress:
+        - Description: HTTP outbound for Ubuntu package repositories
+          IpProtocol: tcp
+          FromPort: 80
+          ToPort: 80
+          CidrIp: 0.0.0.0/0
+        - Description: HTTPS outbound
+          IpProtocol: tcp
+          FromPort: 443
+          ToPort: 443
+          CidrIp: 0.0.0.0/0
+        - Description: DNS UDP
+          IpProtocol: udp
+          FromPort: 53
+          ToPort: 53
+          CidrIp: 0.0.0.0/0
+        - Description: DNS TCP
+          IpProtocol: tcp
+          FromPort: 53
+          ToPort: 53
+          CidrIp: 0.0.0.0/0
+      Tags:
+        - Key: Application
+          Value: whatsapp-notify
+
+  ApplicationInstance:
+    Type: AWS::EC2::Instance
+    CreationPolicy:
+      ResourceSignal:
+        Count: 1
+        Timeout: PT30M
+    Properties:
+      ImageId: !Ref AmiId
+      InstanceType: !Ref InstanceType
+      IamInstanceProfile: !Ref InstanceProfile
+      SubnetId: !Ref SubnetId
+      SecurityGroupIds:
+        - !Ref ApplicationSecurityGroup
+      CreditSpecification:
+        CPUCredits: standard
+      MetadataOptions:
+        HttpEndpoint: enabled
+        HttpTokens: required
+        HttpPutResponseHopLimit: 1
+      Monitoring: false
+      BlockDeviceMappings:
+        - DeviceName: /dev/sda1
+          Ebs:
+            DeleteOnTermination: true
+            Encrypted: true
+            VolumeSize: !Ref RootVolumeSize
+            VolumeType: gp3
+      Tags:
+        - Key: Name
+          Value: whatsapp-notify
+        - Key: Application
+          Value: whatsapp-notify
+        - Key: Environment
+          Value: free-tier
+      UserData:
+        Fn::Base64: !Sub |
+          #!/bin/bash
+          set -euo pipefail
+          exec > >(tee /var/log/whatsapp-notify-bootstrap.log | logger -t user-data -s 2>/dev/console) 2>&1
+
+          signal_failure() {
+            /opt/cfn-bootstrap/bin/cfn-signal --exit-code 1 \
+              --stack "${AWS::StackName}" \
+              --resource ApplicationInstance \
+              --region "${AWS::Region}" || true
+          }
+          trap signal_failure ERR
+
+          apt-get update
+          apt-get install -y curl nginx python3.12 python3.12-venv python3-pip unzip
+
+          python3.12 -m venv /opt/cfn-bootstrap
+          /opt/cfn-bootstrap/bin/pip install \
+            https://s3.amazonaws.com/cloudformation-examples/aws-cfn-bootstrap-py3-latest.tar.gz
+
+          curl --fail --location --retry 3 \
+            https://awscli.amazonaws.com/awscli-exe-linux-x86_64.zip \
+            --output /tmp/awscliv2.zip
+          unzip -q /tmp/awscliv2.zip -d /tmp
+          /tmp/aws/install --bin-dir /usr/local/bin --install-dir /usr/local/aws-cli
+          rm -rf /tmp/aws /tmp/awscliv2.zip
+          aws --version
+
+          id whatsapp-notify >/dev/null 2>&1 || \
+            useradd --system --create-home --home-dir /opt/whatsapp-notify \
+              --shell /usr/sbin/nologin whatsapp-notify
+          install -d -m 755 -o whatsapp-notify -g whatsapp-notify \
+            /opt/whatsapp-notify/app /opt/whatsapp-notify/data
+          install -d -m 700 -o whatsapp-notify -g whatsapp-notify \
+            /opt/whatsapp-notify/data/.whatsapp-profile
+
+          if [ ! -f /swapfile ]; then
+            fallocate -l 2G /swapfile
+            chmod 600 /swapfile
+            mkswap /swapfile
+            swapon /swapfile
+            echo '/swapfile none swap sw 0 0' >> /etc/fstab
+          fi
+
+          aws s3 cp \
+            's3://${ArtifactBucket}/${ArtifactKey}' \
+            /tmp/whatsapp-notify.zip
+          echo '${ArtifactSha256}  /tmp/whatsapp-notify.zip' | sha256sum -c -
+          unzip -q /tmp/whatsapp-notify.zip -d /opt/whatsapp-notify/app
+          rm -f /tmp/whatsapp-notify.zip
+          chown -R whatsapp-notify:whatsapp-notify /opt/whatsapp-notify/app
+          cd /opt/whatsapp-notify/app
+          sudo -u whatsapp-notify python3.12 -m venv .venv
+          sudo -u whatsapp-notify .venv/bin/python -m pip install --upgrade pip
+          sudo -u whatsapp-notify .venv/bin/pip install .
+          .venv/bin/playwright install-deps chromium
+          sudo -u whatsapp-notify .venv/bin/playwright install chromium
+
+          cat >/etc/whatsapp-notify.env <<'EOF'
+          WHATSAPP_TARGET_NAME=
+          WHATSAPP_MESSAGE=
+          WHATSAPP_HEADLESS=true
+          WHATSAPP_PROFILE_DIR=/opt/whatsapp-notify/data/.whatsapp-profile
+          WHATSAPP_TIMEOUT_SECONDS=60
+          API_HOST=127.0.0.1
+          API_PORT=8000
+          LOG_LEVEL=INFO
+          EOF
+          chown root:root /etc/whatsapp-notify.env
+          chmod 600 /etc/whatsapp-notify.env
+
+          cat >/etc/systemd/system/whatsapp-notify.service <<'EOF'
+          [Unit]
+          Description=WhatsApp Notify API
+          After=network-online.target
+          Wants=network-online.target
+
+          [Service]
+          Type=simple
+          User=whatsapp-notify
+          Group=whatsapp-notify
+          WorkingDirectory=/opt/whatsapp-notify/app
+          EnvironmentFile=/etc/whatsapp-notify.env
+          Environment=PYTHONPATH=/opt/whatsapp-notify/app/src
+          ExecStart=/opt/whatsapp-notify/app/.venv/bin/uvicorn api.server:app --host 127.0.0.1 --port 8000 --workers 1
+          Restart=on-failure
+          RestartSec=5
+          TimeoutStopSec=30
+          KillSignal=SIGTERM
+          NoNewPrivileges=true
+          PrivateTmp=true
+          ProtectSystem=strict
+          ProtectHome=true
+          ReadWritePaths=/opt/whatsapp-notify/data
+
+          [Install]
+          WantedBy=multi-user.target
+          EOF
+
+          cat >/etc/nginx/sites-available/whatsapp-notify <<'EOF'
+          server {
+              listen 80 default_server;
+              server_name _;
+              client_max_body_size 64k;
+              location / {
+                  proxy_pass http://127.0.0.1:8000;
+                  proxy_http_version 1.1;
+                  proxy_set_header Host $host;
+                  proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
+                  proxy_set_header X-Forwarded-Proto $scheme;
+                  proxy_connect_timeout 5s;
+                  proxy_read_timeout 90s;
+                  proxy_send_timeout 90s;
+              }
+          }
+          EOF
+          rm -f /etc/nginx/sites-enabled/default
+          ln -sf /etc/nginx/sites-available/whatsapp-notify \
+            /etc/nginx/sites-enabled/whatsapp-notify
+
+          systemctl daemon-reload
+          systemctl enable --now whatsapp-notify
+          nginx -t
+          systemctl enable --now nginx
+          curl --fail --retry 10 --retry-delay 3 \
+            http://127.0.0.1:8000/whatsapp/session/status
+
+          /opt/cfn-bootstrap/bin/cfn-signal --exit-code 0 \
+            --stack "${AWS::StackName}" \
+            --resource ApplicationInstance \
+            --region "${AWS::Region}"
+          trap - ERR
+
+  MonthlyBudget:
+    Type: AWS::Budgets::Budget
+    Properties:
+      Budget:
+        BudgetName: !Sub "${AWS::StackName}-monthly"
+        BudgetLimit:
+          Amount: !Ref BudgetLimitUsd
+          Unit: USD
+        BudgetType: COST
+        TimeUnit: MONTHLY
+      NotificationsWithSubscribers:
+        - Notification:
+            ComparisonOperator: GREATER_THAN
+            NotificationType: ACTUAL
+            Threshold: 80
+            ThresholdType: PERCENTAGE
+          Subscribers:
+            - Address: !Ref BudgetEmail
+              SubscriptionType: EMAIL
+        - Notification:
+            ComparisonOperator: GREATER_THAN
+            NotificationType: FORECASTED
+            Threshold: 100
+            ThresholdType: PERCENTAGE
+          Subscribers:
+            - Address: !Ref BudgetEmail
+              SubscriptionType: EMAIL
+
+Outputs:
+  InstanceId:
+    Description: EC2 instance managed by the stack
+    Value: !Ref ApplicationInstance
+  PublicIp:
+    Description: Auto-assigned public IPv4; changes after stop/start
+    Value: !GetAtt ApplicationInstance.PublicIp
+  SessionManagerCommand:
+    Description: Command to open an SSM shell
+    Value: !Sub "aws ssm start-session --target ${ApplicationInstance} --region ${AWS::Region}"

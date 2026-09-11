@@ -40,3 +40,7 @@ desktop.ini
 
 # Logs e arquivos temporários
 RF/whatsapp-page
+
+# AWS SAM
+.aws-sam/
+samconfig.toml
