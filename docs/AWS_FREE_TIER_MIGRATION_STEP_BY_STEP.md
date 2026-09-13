@@ -11,9 +11,46 @@ isso, a arquitetura recomendada é uma única instância EC2.
 
 O AWS SAM será usado para gerenciar a stack inteira. Um template SAM aceita
 todos os recursos nativos do CloudFormation, portanto pode provisionar EC2,
-EBS, Security Group, IAM, Systems Manager e Budget mesmo sem criar funções
-Lambda. O runtime da aplicação continua na EC2; o SAM atua como ferramenta de
+EBS, Security Group, IAM e Systems Manager mesmo sem criar funções Lambda. O
+runtime da aplicação continua na EC2; o SAM atua como ferramenta de
 infraestrutura como código, implantação, atualização e remoção.
+
+## Como usar este guia
+
+Este documento contém o primeiro provisionamento e também procedimentos de
+operação. Para uma primeira implantação, siga esta ordem:
+
+| Fase | Seções | Resultado esperado |
+| --- | --- | --- |
+| Entender e preparar | 1 a 6 | Arquitetura compreendida, ferramentas instaladas e custos avaliados |
+| Preparar os parâmetros | 7 | VPC, subnet, AMI Ubuntu, tipo EC2, CIDR e artefato definidos |
+| Criar a primeira instância | 8 a 11 | Stack criada com `template.yaml` e aplicação instalada |
+| Testar sem exposição pública | 12 e 13 | API acessível somente pelo túnel do Session Manager |
+| Criar a AMI da aplicação | 11.1 | Release testada e registrada em uma AMI imutável |
+| Operar com a AMI | `CREATE_AMI_AND_DEPLOY.md` | Nova stack criada com `template-ami.yaml` |
+| Produção e manutenção | 14 a 31 | HTTPS, segurança, backup, atualização e remoção planejados |
+
+As seções 19 a 23 são referências para manutenção ou diagnóstico. Elas não
+precisam ser repetidas depois de cada deploy bem-sucedido.
+
+### Dois templates, duas finalidades
+
+| Arquivo | Quando usar | O que acontece no primeiro boot |
+| --- | --- | --- |
+| `template.yaml` | Primeira instalação ou construção de uma nova release | Instala dependências, baixa o ZIP do S3, configura e inicia a aplicação |
+| `template-ami.yaml` | Implantar uma AMI já preparada e testada | Valida o conteúdo da AMI e inicia os serviços; não baixa nem reinstala a aplicação |
+
+Neste guia:
+
+- blocos marcados como `powershell` são executados no computador Windows;
+- blocos marcados como `bash` são executados dentro da EC2, por uma sessão SSM;
+- valores entre `<` e `>` são exemplos que precisam ser substituídos;
+- comandos `aws` não mostram confirmação antes de alterar recursos: confira
+  perfil, região, stack e IDs antes de executá-los.
+
+> **Atenção:** criar uma stack, uma instância, volumes ou snapshots pode gerar
+> cobrança. O Free Tier e créditos reduzem custos, mas não funcionam como um
+> limite automático de gastos.
 
 > **Importante (validado em 11/09/2026):** "AWS Free Tier" não significa que
 > uma EC2 seja gratuita indefinidamente. Para contas abertas a partir de
@@ -120,11 +157,13 @@ Use o diretório informado para a infraestrutura:
 ```text
 $YourDir\whatsapp-notify\
 |-- docs\
-|   `-- AWS_FREE_TIER_MIGRATION_STEP_BY_STEP.md
+|   |-- AWS_FREE_TIER_MIGRATION_STEP_BY_STEP.md
+|   `-- CREATE_AMI_AND_DEPLOY.md
 |-- dist\
 |   `-- whatsapp-notify-<versao>.zip
 |-- samconfig.local.toml
-`-- template.yaml
+|-- template.yaml
+`-- template-ami.yaml
 ```
 
 O código-fonte da aplicação permanece em:
@@ -133,18 +172,22 @@ O código-fonte da aplicação permanece em:
 $YourDir\whatsapp-notify
 ```
 
-Empacote diretamente o estado local, excluindo segredos, ambiente virtual,
-perfil do WhatsApp e metadados do controle de versão. Envie o ZIP para um
-bucket S3 privado e permita que apenas a role da EC2 leia o prefixo de releases
-desse projeto.
+Empacote somente os arquivos necessários para instalar e executar a aplicação.
+Não compacte o diretório inteiro para depois tentar excluir todos os arquivos
+indesejados: novos diretórios locais poderiam entrar no artefato sem que você
+percebesse. Envie o ZIP para um bucket S3 privado e permita que apenas a role da
+EC2 leia o prefixo de releases desse projeto.
 
 ```text
 projeto local -> ZIP versionado -> S3 privado -> EC2
 ```
 
-Não inclua `.env`, `.whatsapp-profile`, logs, caches, testes de cobertura ou
-credenciais no artefato. O download usa a instance role; não coloque access
-keys, URL pré-assinada ou token no template, no `UserData` ou no ZIP.
+O artefato de produção contém somente `pyproject.toml`, `README.md` e `src/`.
+O `README.md` é necessário porque está declarado como metadata do pacote em
+`pyproject.toml`. Não inclua `.env`, `.whatsapp-profile`, logs, caches, testes,
+documentação operacional, templates de infraestrutura ou credenciais. O
+download usa a instance role; não coloque access keys, URL pré-assinada ou
+token no template, no `UserData` ou no ZIP.
 
 ## 4. Instalar e validar as ferramentas
 
@@ -167,7 +210,7 @@ Requisitos:
 - AWS CLI v2;
 - AWS SAM CLI;
 - credenciais configuradas;
-- permissão para CloudFormation, EC2, IAM, SSM e Budgets;
+- permissão para CloudFormation, EC2, IAM e SSM;
 - ferramenta `tar` disponível no Windows;
 - Docker Desktop apenas se futuramente houver builds SAM em contêiner. O
   template EC2 abaixo não precisa de Docker para `sam build`.
@@ -201,7 +244,7 @@ No console AWS:
 1. Abra **Billing and Cost Management > Free Tier**.
 2. Confirme o plano, saldo de créditos e data de expiração.
 3. Confirme quais tipos a API marca como `free-tier-eligible` na região.
-4. Crie um AWS Budget antes da instância.
+4. Se desejar alertas de custo, crie um AWS Budget separadamente antes da instância.
 
 ```powershell
 aws ec2 describe-instance-types `
@@ -229,9 +272,11 @@ Este roteiro limita o template a `t3.micro` e `t3.small`. Use modo de créditos
 de CPU `standard` nessas instâncias. `unlimited` pode gerar cobrança de
 créditos excedentes em uso sustentado.
 
-## 6. Criar proteção de custo antes da infraestrutura
+## 6. Configurar proteção de custo fora da stack
 
-Crie um budget mensal pequeno, por exemplo USD 5 para detectar qualquer uso
+O `template.yaml` e o `template-ami.yaml` não criam nem gerenciam AWS Budgets.
+Se desejar essa proteção adicional, crie manualmente um budget mensal pequeno,
+por exemplo USD 5, para detectar qualquer uso
 inesperado, com alertas em 50%, 80% e 100%. O budget alerta, mas não interrompe
 recursos automaticamente, e créditos podem fazer a fatura líquida diferir do
 custo de uso mostrado. Acompanhe também o saldo de créditos.
@@ -257,7 +302,7 @@ Custos que exigem atenção:
 - CPU excedente em instâncias T no modo `unlimited`;
 - instância esquecida ligada após o fim do Free Tier.
 
-## 7. Descobrir VPC, subnet, AMI e tipo elegível
+## 7. Descobrir VPC, subnet, AMI Ubuntu inicial e tipo elegível
 
 O template recebe VPC, subnet, AMI e tipo como parâmetros para não assumir
 valores que mudam por conta e região.
@@ -281,7 +326,9 @@ $SubnetId = aws ec2 describe-subnets `
   --profile $AwsProfile
 ```
 
-Obtenha a AMI Ubuntu Server 24.04 LTS x86_64 publicada pela Canonical:
+Para criar a primeira instância, obtenha a AMI Ubuntu Server 24.04 LTS x86_64
+publicada pela Canonical. Esta é apenas a imagem inicial do sistema operacional,
+informada ao `template.yaml`; ela ainda não contém o `whatsapp-notify`:
 
 ```powershell
 $AmiId = aws ssm get-parameter `
@@ -354,8 +401,11 @@ O comando `create-bucket` acima é próprio para `us-east-1`. Se escolher outra
 região, acrescente
 `--create-bucket-configuration LocationConstraint=$AwsRegion`.
 
-Empacote o estado atual do diretório local. O ZIP é criado fora da árvore para
-não incluir a si próprio:
+Empacote a aplicação a partir da raiz do projeto. O comando usa uma lista
+explícita de entradas: apenas `pyproject.toml`, `README.md` e `src` podem entrar.
+As exclusões adicionais protegem contra caches, metadata de builds anteriores e
+um perfil do navegador criado acidentalmente dentro de `src`. O ZIP é criado
+fora da árvore para não incluir a si próprio:
 
 ```powershell
 $ArtifactVersion = Get-Date -Format "yyyyMMdd-HHmmss"
@@ -363,19 +413,37 @@ $ArtifactKey = "whatsapp-notify/releases/$ArtifactVersion/whatsapp-notify.zip"
 $ArtifactPath = Join-Path $env:TEMP "whatsapp-notify-$ArtifactVersion.zip"
 
 tar -a -c -f $ArtifactPath `
-  --exclude=.git `
-  --exclude=.venv `
-  --exclude=.idea `
-  --exclude=.pytest_cache `
-  --exclude=.whatsapp-profile `
-  --exclude=.env `
-  --exclude=__pycache__ `
-  --exclude=.coverage `
-  --exclude=dist `
-  .
+  --exclude='*/__pycache__' `
+  --exclude='*/__pycache__/*' `
+  --exclude='*.py[cod]' `
+  --exclude='*.egg-info' `
+  --exclude='*.egg-info/*' `
+  --exclude='*/.whatsapp-profile' `
+  --exclude='*/.whatsapp-profile/*' `
+  pyproject.toml README.md src
+
+if ($LASTEXITCODE -ne 0) {
+  throw "Falha ao criar o artefato ZIP."
+}
+
+tar -tf $ArtifactPath | Sort-Object
+
+if ($LASTEXITCODE -ne 0) {
+  throw "Falha ao listar o conteúdo do artefato ZIP."
+}
 
 $ArtifactSha256 = (Get-FileHash -Algorithm SHA256 $ArtifactPath).Hash.ToLower()
+```
 
+Antes do upload, revise a saída de `tar -tf`. Ela deve mostrar apenas os dois
+arquivos da raiz e arquivos Python dentro de `src/`. Se aparecer `.env`,
+`.whatsapp-profile`, `__pycache__`, `*.egg-info`, `tests`, `docs`, `RF`,
+`.aws-sam`, `samconfig`, `template*.yaml` ou qualquer arquivo desconhecido,
+apague o ZIP local, corrija o comando e gere o artefato novamente.
+
+Depois da conferência, envie o ZIP e consulte o objeto criado:
+
+```powershell
 aws s3 cp $ArtifactPath "s3://$ArtifactBucket/$ArtifactKey" `
   --sse AES256 `
   --metadata "sha256=$ArtifactSha256" `
@@ -444,14 +512,6 @@ Parameters:
     Default: 16
     MinValue: 12
     MaxValue: 30
-  BudgetEmail:
-    Type: String
-    AllowedPattern: ^[^@\s]+@[^@\s]+\.[^@\s]+$
-  BudgetLimitUsd:
-    Type: Number
-    Default: 5
-    MinValue: 1
-
 Resources:
   InstanceRole:
     Type: AWS::IAM::Role
@@ -678,42 +738,28 @@ Resources:
           systemctl enable --now whatsapp-notify
           nginx -t
           systemctl enable --now nginx
-          curl --fail --retry 10 --retry-delay 3 \
-            http://127.0.0.1:8000/whatsapp/session/status
+          for attempt in {1..20}; do
+            if curl --fail --silent --show-error --max-time 5 \
+              http://127.0.0.1:8000/whatsapp/session/status; then
+              echo "WhatsApp Notify health check succeeded."
+              break
+            fi
+
+            if [ "$attempt" -eq 20 ]; then
+              echo "WhatsApp Notify health check failed after 20 attempts."
+              systemctl status whatsapp-notify --no-pager || true
+              journalctl -u whatsapp-notify -n 100 --no-pager || true
+              exit 1
+            fi
+
+            sleep 3
+          done
 
           /opt/cfn-bootstrap/bin/cfn-signal --exit-code 0 \
             --stack "${AWS::StackName}" \
             --resource ApplicationInstance \
             --region "${AWS::Region}"
           trap - ERR
-
-  MonthlyBudget:
-    Type: AWS::Budgets::Budget
-    Properties:
-      Budget:
-        BudgetName: !Sub "${AWS::StackName}-monthly"
-        BudgetLimit:
-          Amount: !Ref BudgetLimitUsd
-          Unit: USD
-        BudgetType: COST
-        TimeUnit: MONTHLY
-      NotificationsWithSubscribers:
-        - Notification:
-            ComparisonOperator: GREATER_THAN
-            NotificationType: ACTUAL
-            Threshold: 80
-            ThresholdType: PERCENTAGE
-          Subscribers:
-            - Address: !Ref BudgetEmail
-              SubscriptionType: EMAIL
-        - Notification:
-            ComparisonOperator: GREATER_THAN
-            NotificationType: FORECASTED
-            Threshold: 100
-            ThresholdType: PERCENTAGE
-          Subscribers:
-            - Address: !Ref BudgetEmail
-              SubscriptionType: EMAIL
 
 Outputs:
   InstanceId:
@@ -729,6 +775,8 @@ Outputs:
 
 Observações sobre o template:
 
+- `template.yaml` é o template de inicialização completa e deve ser usado para
+  criar a primeira instância ou reconstruir a imagem-base;
 - a aplicação é baixada de uma chave S3 privada no primeiro boot;
 - a role só pode executar `s3:GetObject` no prefixo privado de releases desse
   projeto, permitindo atualização por novas chaves sem ampliar para o bucket;
@@ -747,7 +795,8 @@ Observações sobre o template:
   Group não libera a porta 80; HTTPS será configurado depois;
 - `DeleteOnTermination: true` evita EBS órfão, mas exige snapshot antes de
   remover a stack se o perfil precisar ser preservado;
-- o orçamento é global à conta e alerta, mas não bloqueia gastos.
+- budgets e alertas de cobrança são administrados separadamente no Billing e
+  não pertencem à stack da aplicação.
 
 ## 9. Criar a configuração local do SAM
 
@@ -776,7 +825,7 @@ Acrescente em `[default.deploy.parameters]`:
 
 ```toml
 profile = "<perfil-aws>"
-parameter_overrides = "VpcId=<vpc-id> SubnetId=<subnet-id> AmiId=<ami-id> InstanceType=t3.micro AllowedCidr=<ip/32> ArtifactBucket=<bucket> ArtifactKey=whatsapp-notify/releases/<versao>/whatsapp-notify.zip ArtifactSha256=<sha256> RootVolumeSize=16 BudgetEmail=<email> BudgetLimitUsd=5"
+parameter_overrides = "VpcId=<vpc-id> SubnetId=<subnet-id> AmiId=<ami-id> InstanceType=t3.micro AllowedCidr=<ip/32> ArtifactBucket=<bucket> ArtifactKey=whatsapp-notify/releases/<versao>/whatsapp-notify.zip ArtifactSha256=<sha256> RootVolumeSize=16"
 ```
 
 Inclua no `.gitignore` do projeto de infraestrutura:
@@ -802,7 +851,10 @@ No projeto de infraestrutura:
 
 ```powershell
 Set-Location $YourDir\whatsapp-notify
-sam validate --lint --region $AwsRegion --profile $AwsProfile
+sam validate --template-file template.yaml `
+  --lint --region $AwsRegion --profile $AwsProfile
+sam validate --template-file template-ami.yaml `
+  --lint --region $AwsRegion --profile $AwsProfile
 sam build
 ```
 
@@ -829,9 +881,7 @@ sam deploy --guided `
     ArtifactBucket=$ArtifactBucket `
     ArtifactKey=$ArtifactKey `
     ArtifactSha256=$ArtifactSha256 `
-    RootVolumeSize=16 `
-    BudgetEmail=<email-monitorado> `
-    BudgetLimitUsd=5
+    RootVolumeSize=16
 ```
 
 Nos próximos deploys:
@@ -862,6 +912,17 @@ sudo systemctl status whatsapp-notify --no-pager
 sudo journalctl -u whatsapp-notify -n 200 --no-pager
 ```
 
+O health check tenta a conexão até 20 vezes, aguardando três segundos entre
+tentativas. Isso evita sinalizar falha apenas porque o `systemctl` terminou antes
+de o Uvicorn começar a aceitar conexões. Se todas as tentativas falharem, o
+bootstrap grava o estado e as últimas linhas do journal antes de enviar o
+`cfn-signal` de falha.
+
+Se o log mostrar uma única conexão recusada seguida pela inicialização normal do
+Uvicorn, confirme que a stack foi implantada com a versão atual deste template.
+Versões antigas usavam apenas `curl --retry`, que não repetia esse erro local de
+conexão.
+
 Se o log contiver `Package 'awscli' has no installation candidate`, a instância
 foi criada com uma versão anterior deste template. Não basta reiniciá-la:
 o cloud-init normalmente executa o `UserData` somente no primeiro boot.
@@ -869,6 +930,85 @@ Atualize a stack com o template corrigido e substitua `ApplicationInstance` (ou
 recrie a stack se o primeiro deploy tiver revertido). A ausência de
 `/opt/cfn-bootstrap/bin/cfn-signal` e de `whatsapp-notify.service` é consequência
 da interrupção prematura do bootstrap, não uma falha independente.
+
+### 11.1 Criar uma AMI imutável da aplicação
+
+O primeiro deploy pode levar vários minutos porque a `CreationPolicy` aguarda o
+`cfn-signal` enviado somente depois de instalar pacotes do Ubuntu, AWS CLI,
+dependências Python, Playwright e Chromium, configurar os serviços e concluir o
+health check. O limite `PT30M` é o tempo máximo de espera, não uma pausa fixa.
+
+Depois de homologar a primeira instância, crie uma AMI privada a partir dela. Uma
+instância EC2 não usa diretamente um snapshot como `ImageId`: `create-image`
+registra a AMI e cria automaticamente o snapshot EBS associado.
+
+Antes de criar a imagem, pare a aplicação e remova o perfil do WhatsApp,
+históricos, chaves e outros segredos. Não grave uma sessão autenticada na AMI,
+pois todas as instâncias derivadas receberiam uma cópia das credenciais.
+
+O procedimento completo, incluindo higienização, criação, espera, consulta do
+snapshot e descarte da imagem, está em
+[`CREATE_AMI_AND_DEPLOY.md`](CREATE_AMI_AND_DEPLOY.md).
+
+Resumo da criação:
+
+```powershell
+$InstanceId = aws cloudformation describe-stacks `
+  --stack-name $StackName `
+  --query "Stacks[0].Outputs[?OutputKey=='InstanceId'].OutputValue | [0]" `
+  --output text `
+  --region $AwsRegion `
+  --profile $AwsProfile
+
+$ImageName = "whatsapp-notify-release-$(Get-Date -Format 'yyyyMMdd-HHmmss')"
+
+$AmiId = aws ec2 create-image `
+  --instance-id $InstanceId `
+  --name $ImageName `
+  --description "Immutable WhatsApp Notify application release" `
+  --tag-specifications "ResourceType=image,Tags=[{Key=Application,Value=whatsapp-notify},{Key=Name,Value=$ImageName}]" `
+  --region $AwsRegion `
+  --profile $AwsProfile `
+  --query ImageId `
+  --output text
+
+aws ec2 wait image-available `
+  --image-ids $AmiId `
+  --region $AwsRegion `
+  --profile $AwsProfile
+```
+
+Para a criação completa, limpeza e implantação dessa AMI, siga
+[`CREATE_AMI_AND_DEPLOY.md`](CREATE_AMI_AND_DEPLOY.md). O resumo abaixo serve
+somente como referência rápida.
+
+Faça o primeiro teste com outra stack e o template otimizado:
+
+```powershell
+$AmiStackName = "whatsapp-notify-ami"
+
+sam deploy `
+  --template-file template-ami.yaml `
+  --stack-name $AmiStackName `
+  --region $AwsRegion `
+  --profile $AwsProfile `
+  --capabilities CAPABILITY_IAM `
+  --parameter-overrides `
+    VpcId=$VpcId `
+    SubnetId=$SubnetId `
+    AmiId=$AmiId `
+    InstanceType=$InstanceType `
+    AllowedCidr=$AllowedCidr `
+    RootVolumeSize=16
+```
+
+O `template-ami.yaml` usa a AMI como uma release imutável: verifica se a
+aplicação, a virtualenv e as ferramentas pré-instaladas existem, inicia os
+serviços, executa o health check e envia o `cfn-signal`. Ele não baixa o ZIP nem
+executa `pip install`. Sua `CreationPolicy` usa `PT10M`. Quando o código ou as
+dependências mudarem, atualize e teste a instância de construção e gere uma nova
+AMI pelo fluxo completo; não reutilize indefinidamente uma imagem sem
+atualizações de segurança.
 
 ## 12. Obter os outputs e conectar
 
@@ -916,13 +1056,19 @@ Invoke-RestMethod http://127.0.0.1:8000/whatsapp/session/status
 $Body = @{
   contact = "Grupo Teste"
   message = "Mensagem de homologação"
-} | ConvertTo-Json
+} | ConvertTo-Json -Compress
+
+# A conversão explícita evita erro de leitura do JSON com acentos no
+# Windows PowerShell 5.1. A API espera que o corpo esteja em UTF-8.
+$BodyUtf8 = [System.Text.Encoding]::UTF8.GetBytes($Body)
 
 Invoke-RestMethod `
   -Method Post `
   -Uri http://127.0.0.1:8000/whatsapp/messages/send `
-  -ContentType "application/json" `
-  -Body $Body
+  -ContentType "application/json; charset=utf-8" `
+  -Body $BodyUtf8
+  
+Invoke-RestMethod http://127.0.0.1:8000/whatsapp/session/stop
 ```
 
 ## 14. Preparar HTTPS
@@ -1098,10 +1244,12 @@ sudo rm -f /tmp/whatsapp-notify.zip
 sudo systemctl start whatsapp-notify
 ```
 
-Só remova `app-previous` depois do smoke test. O parâmetro `ArtifactKey` do
-CloudFormation representa o artefato de bootstrap; alterá-lo em `sam deploy`
-não é o procedimento de atualização in-place, pois o cloud-init normalmente
-não reexecuta o `UserData` a cada reboot.
+Só remova `app-previous` depois do smoke test. No `template.yaml`, o parâmetro
+`ArtifactKey` representa o artefato de bootstrap. Alterá-lo em `sam deploy` não
+é um procedimento de atualização in-place: a alteração modifica o `UserData` e
+pode reiniciar a instância EBS, mas o cloud-init normalmente não reexecuta o
+script. No fluxo imutável de `template-ami.yaml`, uma release nova exige uma
+nova AMI e a atualização de `AmiId`, que substitui a EC2.
 
 ## 21. Configurar as variáveis de ambiente
 
@@ -1212,13 +1360,19 @@ Abra `whatsapp-qr.png`, escaneie no celular e consulte o status até obter
 $Body = @{
   contact = "Grupo Teste"
   message = "Mensagem de homologação"
-} | ConvertTo-Json
+} | ConvertTo-Json -Compress
+
+# A conversão explícita evita erro de leitura do JSON com acentos no
+# Windows PowerShell 5.1. A API espera que o corpo esteja em UTF-8.
+$BodyUtf8 = [System.Text.Encoding]::UTF8.GetBytes($Body)
 
 Invoke-RestMethod `
   -Method Post `
   -Uri http://127.0.0.1:8000/whatsapp/messages/send `
-  -ContentType "application/json" `
-  -Body $Body
+  -ContentType "application/json; charset=utf-8" `
+  -Body $BodyUtf8
+  
+Invoke-RestMethod http://127.0.0.1:8000/whatsapp/session/stop
 ```
 
 Não registre o PNG do QR Code, o perfil ou artefatos de falha no Git.
@@ -1331,6 +1485,11 @@ Snapshots também são cobrados. Mantenha poucos e exclua os antigos. O perfil
 contém material de sessão sensível; não o envie a S3 sem criptografia e controle
 de acesso.
 
+Esse snapshot de backup contém o estado da aplicação e é diferente do snapshot
+associado à AMI-base da seção 11.1. A AMI-base deve estar higienizada e serve
+para provisionamento; o snapshot de backup pode conter a sessão e serve somente
+para recuperação controlada.
+
 ## 27. Observabilidade econômica
 
 Comece com métricas básicas gratuitas da EC2 e `journalctl`. Não habilite
@@ -1392,9 +1551,23 @@ Execute nesta ordem:
 
 ## 30. Rollback
 
-Se a atualização da seção 20 falhar, restaure o diretório anterior:
+Antes de agir, identifique qual rollback é necessário:
+
+| Situação | Procedimento |
+| --- | --- |
+| Falha após atualização manual pelo ZIP do S3 | Restaurar `app-previous` ou reinstalar o ZIP anterior |
+| Falha em uma release implantada com `template-ami.yaml` | Atualizar a stack com o `AmiId` anterior |
+| Perfil do WhatsApp corrompido | Restaurar um snapshot de backup ou autenticar novamente |
+| Desistência completa do ambiente | Remover a stack e depois revisar os recursos externos |
+
+### 30.1 Rollback do código usando o S3
+
+Alterar `ArtifactKey` no CloudFormation não reinstala o código na instância
+existente. Se a atualização manual da seção 20 falhar, restaure primeiro o
+diretório anterior dentro da EC2:
 
 ```bash
+test -d /opt/whatsapp-notify/app-previous
 sudo systemctl stop whatsapp-notify
 sudo mv /opt/whatsapp-notify/app /opt/whatsapp-notify/app-failed
 sudo mv /opt/whatsapp-notify/app-previous /opt/whatsapp-notify/app
@@ -1402,35 +1575,240 @@ sudo systemctl start whatsapp-notify
 sudo systemctl status whatsapp-notify --no-pager
 ```
 
-Se o diretório anterior não existir, baixe a chave S3 versionada anterior e
-repita a instalação da seção 20 com seu SHA-256.
-
-Se o perfil for corrompido, restaure o snapshot com a instância parada ou mova
-o diretório atual e refaça a autenticação. Nunca execute duas instâncias usando
-cópias ativas do mesmo perfil simultaneamente.
-
-Depois de confirmar que o rollback foi concluído e que os backups não são mais
-necessários, exclua o snapshot pelo ID retornado por `create-snapshot`:
+Execute o smoke test da seção 29. Se o diretório anterior não existir, no
+PowerShell localize uma release anterior sem alterar ou excluir objetos:
 
 ```powershell
+aws s3api list-objects-v2 `
+  --bucket $ArtifactBucket `
+  --prefix "whatsapp-notify/releases/" `
+  --query "Contents[].{Key:Key,Modified:LastModified,Size:Size}" `
+  --output table `
+  --region $AwsRegion `
+  --profile $AwsProfile
+```
+
+Escolha uma chave conhecida e recupere o SHA-256 gravado no metadata:
+
+```powershell
+$PreviousArtifactKey = "whatsapp-notify/releases/<versao-anterior>/whatsapp-notify.zip"
+$PreviousArtifactSha256 = aws s3api head-object `
+  --bucket $ArtifactBucket `
+  --key $PreviousArtifactKey `
+  --query "Metadata.sha256" `
+  --output text `
+  --region $AwsRegion `
+  --profile $AwsProfile
+
+$PreviousArtifactKey
+$PreviousArtifactSha256
+```
+
+Se a chave ou o hash estiver vazio, não prossiga. Use esses dois valores no
+procedimento manual da seção 20 e execute novamente o smoke test. Preserve o
+ZIP atual até concluir o diagnóstico; rollback não exige apagar a release com
+problema.
+
+### 30.2 Rollback para uma AMI anterior
+
+Este procedimento substitui a EC2. O volume raiz da instância atual pode ser
+excluído durante a substituição. Antes do deploy, pare envios e crie um snapshot
+de backup caso precise preservar o perfil do WhatsApp. Não execute duas cópias
+ativas do mesmo perfil simultaneamente.
+
+Confirme que a AMI anterior ainda está disponível:
+
+```powershell
+$PreviousAmiId = "ami-<id-anterior>"
+
+aws ec2 describe-images `
+  --image-ids $PreviousAmiId `
+  --include-disabled `
+  --query "Images[0].{ImageId:ImageId,Name:Name,State:State}" `
+  --output table `
+  --region $AwsRegion `
+  --profile $AwsProfile
+```
+
+Se a imagem estiver desabilitada, habilite-a antes do rollback:
+
+```powershell
+aws ec2 enable-image `
+  --image-id $PreviousAmiId `
+  --region $AwsRegion `
+  --profile $AwsProfile
+```
+
+Atualize a stack da AMI informando todos os parâmetros obrigatórios. Revise o
+change set e confirme que `ApplicationInstance` será substituída:
+
+```powershell
+sam deploy `
+  --template-file template-ami.yaml `
+  --stack-name $AmiStackName `
+  --region $AwsRegion `
+  --profile $AwsProfile `
+  --capabilities CAPABILITY_IAM `
+  --confirm-changeset `
+  --parameter-overrides `
+    VpcId=$VpcId `
+    SubnetId=$SubnetId `
+    AmiId=$PreviousAmiId `
+    InstanceType=$InstanceType `
+    AllowedCidr=$AllowedCidr `
+    RootVolumeSize=16
+```
+
+Aguarde `UPDATE_COMPLETE`, conecte pelo Session Manager e execute o smoke test.
+Se nenhum backup de perfil for restaurado, autentique o WhatsApp novamente.
+
+### 30.3 Rollback do perfil por snapshot
+
+Se o perfil for corrompido, restaure o snapshot com a instância parada ou mova
+o diretório atual e refaça a autenticação. Mantenha o snapshot até validar
+mensagens e um reboot. Somente depois, confira o ID e exclua o backup que não
+for mais necessário:
+
+```powershell
+$SnapshotId = "snap-<id-confirmado>"
+
+aws ec2 describe-snapshots `
+  --snapshot-ids $SnapshotId `
+  --region $AwsRegion `
+  --profile $AwsProfile
+
 aws ec2 delete-snapshot `
   --snapshot-id $SnapshotId `
   --region $AwsRegion `
   --profile $AwsProfile
 ```
 
-Para excluir o bucket S3 de artefatos, incluindo todos os objetos, execute:
+> **Atenção:** excluir snapshots, objetos S3 ou uma AMI registrada é uma ação
+> separada do rollback. Faça a limpeza somente após confirmar a recuperação.
+
+### 30.4 Inventariar recursos criados fora do SAM
+
+O `sam delete` remove apenas os recursos pertencentes à stack. Neste projeto,
+os seguintes itens podem ter sido criados manualmente:
+
+| Recurso externo | Como verificar | Quando remover |
+| --- | --- | --- |
+| Bucket e releases no S3 | `aws s3 ls s3://$ArtifactBucket --recursive` | Quando nenhuma instalação ou reversão depender dos ZIPs |
+| AMIs da aplicação | `aws ec2 describe-images --owners self` | Depois que nenhuma instância ou rollback usar a imagem |
+| Snapshots de AMI e backup | `aws ec2 describe-snapshots --owner-ids self` | Depois de identificar a finalidade de cada snapshot |
+| Elastic IP | `aws ec2 describe-addresses` | Quando não estiver associado nem reservado para o serviço |
+| Registro DNS | Console Route 53 ou provedor do domínio | Quando não deve mais apontar para a aplicação |
+| Budget manual | Billing and Cost Management | Somente se o alerta não for mais útil |
+
+Inventário não gera rollback nem remove recursos. Registre os IDs e confirme a
+propriedade antes de executar qualquer exclusão.
+
+### 30.5 Limpar releases e bucket S3
+
+Para remover apenas uma release, confira a chave exata e depois exclua somente
+esse objeto:
 
 ```powershell
+$ArtifactKeyToDelete = "whatsapp-notify/releases/<versao-confirmada>/whatsapp-notify.zip"
+
+aws s3api head-object `
+  --bucket $ArtifactBucket `
+  --key $ArtifactKeyToDelete `
+  --region $AwsRegion `
+  --profile $AwsProfile
+
+aws s3api delete-object `
+  --bucket $ArtifactBucket `
+  --key $ArtifactKeyToDelete `
+  --region $AwsRegion `
+  --profile $AwsProfile
+```
+
+Para remover o bucket inteiro, primeiro confira o nome, o conteúdo e o estado
+de versionamento:
+
+```powershell
+aws s3api get-bucket-versioning `
+  --bucket $ArtifactBucket `
+  --region $AwsRegion `
+  --profile $AwsProfile
+
+aws s3 ls "s3://$ArtifactBucket" --recursive `
+  --region $AwsRegion `
+  --profile $AwsProfile
+
 aws s3 rb "s3://$ArtifactBucket" `
   --force `
   --region $AwsRegion `
   --profile $AwsProfile
 ```
 
-Essas exclusões são permanentes. Não exclua o snapshot antes de validar a
-recuperação nem remova um bucket compartilhado ou que ainda contenha versões
-necessárias para outros rollbacks.
+O roteiro cria o bucket sem versionamento. Se `get-bucket-versioning` retornar
+`Enabled` ou `Suspended`, o comando `--force` não é suficiente para apagar
+versões e delete markers. Não remova um bucket compartilhado ou que contenha
+releases necessárias.
+
+### 30.6 Desabilitar ou remover uma AMI e seus snapshots
+
+Prefira `disable-image` enquanto ainda existir possibilidade de rollback. Para
+remoção definitiva, primeiro confirme que nenhuma instância usa a AMI e capture
+os IDs dos snapshots **antes** de desregistrá-la:
+
+```powershell
+$RetiredAmiId = "ami-<id-confirmado>"
+
+aws ec2 describe-instances `
+  --filters "Name=image-id,Values=$RetiredAmiId" `
+            "Name=instance-state-name,Values=pending,running,stopping,stopped" `
+  --query "Reservations[].Instances[].{Id:InstanceId,State:State.Name}" `
+  --output table `
+  --region $AwsRegion `
+  --profile $AwsProfile
+
+aws ec2 describe-images `
+  --image-ids $RetiredAmiId `
+  --query "Images[0].BlockDeviceMappings[].Ebs.SnapshotId" `
+  --output table `
+  --region $AwsRegion `
+  --profile $AwsProfile
+```
+
+Anote cada `snap-...`. Se a consulta de instâncias retornar algum resultado,
+não desregistre a AMI. Quando a imagem não tiver consumidores nem utilidade para
+rollback:
+
+```powershell
+aws ec2 deregister-image `
+  --image-id $RetiredAmiId `
+  --region $AwsRegion `
+  --profile $AwsProfile
+
+$AmiSnapshotIds = @("snap-<id-confirmado>")
+foreach ($AmiSnapshotId in $AmiSnapshotIds) {
+  aws ec2 delete-snapshot `
+    --snapshot-id $AmiSnapshotId `
+    --region $AwsRegion `
+    --profile $AwsProfile
+}
+```
+
+Desregistrar a AMI não exclui automaticamente os snapshots associados. Sem uma
+regra prévia do Recycle Bin, o deregistro deve ser tratado como permanente.
+
+### 30.7 Outros recursos externos
+
+- **Elastic IP:** confira `AllocationId` e `AssociationId`. Desassocie com
+  `aws ec2 disassociate-address --association-id <eipassoc-id>` e libere com
+  `aws ec2 release-address --allocation-id <eipalloc-id>`. IPv4 público pode
+  gerar cobrança enquanto permanecer alocado.
+- **DNS:** remova somente o registro `A` criado para a aplicação, no Route 53 ou
+  no provedor usado. Não exclua a hosted zone nem o domínio se forem
+  compartilhados.
+- **Budget:** budgets foram criados fora da stack. Exclua-os pelo console de
+  Billing apenas se os alertas não forem mais necessários.
+- **Certificado Certbot:** fica no disco da EC2 e normalmente desaparece com o
+  volume raiz. Remova separadamente apenas desafios ou registros DNS criados
+  fora da instância.
 
 ## 31. Remover a stack e evitar cobranças
 
@@ -1448,27 +1826,28 @@ sam delete `
 ```
 
 Confirme no console que o CloudFormation removeu a instância, Security Group,
-role, instance profile e budget. Em seguida siga a conferência:
+role e instance profile. Budgets criados separadamente não são removidos com a
+stack. Em seguida siga a conferência:
 
 1. pare o serviço e confirme que não há envio em andamento;
 2. faça backup somente se necessário;
 3. termine a instância;
-4. exclua snapshots desnecessários;
-5. exclua volumes EBS órfãos;
-6. libere Elastic IP, se houver;
-7. exclua Security Group, role e instance profile exclusivos;
-8. confirme em **Cost Explorer** e **Free Tier** que não restaram recursos.
+4. faça o inventário de recursos externos da seção 30.4;
+5. exclua snapshots desnecessários somente após registrar sua finalidade;
+6. exclua volumes EBS órfãos;
+7. libere Elastic IP, se houver;
+8. remova DNS e budgets externos somente quando apropriado;
+9. confirme em **Cost Explorer** e **Free Tier** que não restaram recursos.
 
-O bucket de artefatos não pertence à stack para existir antes do primeiro
-deploy. Exclua objetos antigos com `aws s3 rm s3://<bucket>/<chave>`. Quando
-não houver mais deploys nem versões para rollback, esvazie o bucket e remova-o
-explicitamente. Não exclua um bucket compartilhado com outros projetos.
+O bucket de artefatos, as AMIs e seus snapshots não pertencem à stack. Siga as
+seções 30.5 e 30.6 para removê-los com conferência prévia. Não use exclusões
+recursivas em buckets compartilhados.
 
 ## 32. Checklist final
 
 - [ ] Modalidade, créditos e expiração do Free Tier conferidos.
 - [ ] Conta legada tratada como paga em 2026, salvo crédito confirmado no console.
-- [ ] Budget e alertas de uso criados antes da instância.
+- [ ] Budget e alertas de uso configurados separadamente, caso desejados.
 - [ ] Tipo EC2 elegível escolhido e créditos T configurados conscientemente.
 - [ ] Arquitetura da AMI (`amd64`) compatível com o tipo `t3.*` do template.
 - [ ] ZIP local exclui `.env`, perfil, controle de versão, ambiente virtual, caches e logs.
@@ -1478,7 +1857,11 @@ explicitamente. Não exclua um bucket compartilhado com outros projetos.
 - [ ] EBS criptografado e perfil persistente fora do diretório do código.
 - [ ] IMDSv2 obrigatório.
 - [ ] SSM operacional, sem porta 22 e sem key pair.
-- [ ] `template.yaml` validado e implantado com SAM.
+- [ ] `template.yaml` e `template-ami.yaml` validados com SAM.
+- [ ] AMI-base criada sem perfil do WhatsApp, credenciais ou outros segredos.
+- [ ] Snapshot associado à AMI identificado e incluído no controle de custos.
+- [ ] AMI contém a release testada; `template-ami.yaml` não baixa nem reinstala o código.
+- [ ] Primeiro deploy com `template-ami.yaml` feito em uma stack separada.
 - [ ] `CreationPolicy` recebeu o sinal de sucesso do bootstrap.
 - [ ] Chromium e dependências instalados pelo Playwright.
 - [ ] API executada por usuário sem login e por systemd.
@@ -1491,6 +1874,8 @@ explicitamente. Não exclua um bucket compartilhado com outros projetos.
 - [ ] QR Code, mensagens e perfil ausentes de logs e artefatos.
 - [ ] Smoke test aprovado após deploy e reboot.
 - [ ] Procedimentos de backup, rollback e remoção testados.
+- [ ] Releases S3 e AMIs anteriores preservadas até a aprovação do smoke test.
+- [ ] Recursos externos à stack inventariados antes de qualquer exclusão.
 - [ ] Custos de IPv4, EBS, snapshots e tráfego acompanhados.
 - [ ] `sam delete` testado em ambiente descartável.
 
@@ -1501,6 +1886,7 @@ explicitamente. Não exclua um bucket compartilhado com outros projetos.
 - [AWS SAM - conceitos](https://docs.aws.amazon.com/serverless-application-model/latest/developerguide/what-is-sam.html)
 - [AWS SAM CLI - deploy](https://docs.aws.amazon.com/serverless-application-model/latest/developerguide/using-sam-cli-deploy.html)
 - [Recursos CloudFormation do EC2](https://docs.aws.amazon.com/AWSCloudFormation/latest/TemplateReference/AWS_EC2.html)
+- [Criar uma AMI baseada em EBS](https://docs.aws.amazon.com/AWSEC2/latest/UserGuide/creating-an-ami-ebs.html)
 - [Planos do AWS Free Tier](https://docs.aws.amazon.com/awsaccountbilling/latest/aboutv2/free-tier-plans.html)
 - [Monitorar o uso gratuito do EC2](https://docs.aws.amazon.com/AWSEC2/latest/UserGuide/ec2-free-tier-usage.html)
 - [Preços de IPv4 público](https://aws.amazon.com/vpc/pricing/)

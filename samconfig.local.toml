@@ -9,4 +9,4 @@ region = "us-east-1"
 capabilities = "CAPABILITY_IAM"
 confirm_changeset = true
 profile = "<perfil-aws>"
-parameter_overrides = "VpcId=<vpc-id> SubnetId=<subnet-id> AmiId=<ami-id> InstanceType=t3.micro AllowedCidr=<ip/32> ArtifactBucket=<bucket> ArtifactKey=whatsapp-notify/releases/<versao>/whatsapp-notify.zip ArtifactSha256=<sha256> RootVolumeSize=16 BudgetEmail=<email> BudgetLimitUsd=5"
+parameter_overrides = "VpcId=<vpc-id> SubnetId=<subnet-id> AmiId=<ami-id> InstanceType=t3.micro AllowedCidr=<ip/32> ArtifactBucket=<bucket> ArtifactKey=whatsapp-notify/releases/<versao>/whatsapp-notify.zip ArtifactSha256=<sha256> RootVolumeSize=16"

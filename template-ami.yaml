@@ -1,0 +1,192 @@
+AWSTemplateFormatVersion: "2010-09-09"
+Transform: AWS::Serverless-2016-10-31
+Description: WhatsApp Notify on one EC2 instance - runs the immutable application release baked into the AMI
+
+Metadata:
+  AWSToolsMetrics:
+    AWSAgentToolkit: aws-cloudformation@2
+  com.aws.cloudformation.Context:
+    arch: Single EC2 instance booted from an immutable application AMI
+    must:
+      - AmiId contains the tested whatsapp-notify release, Python venv, Chromium, nginx, systemd units, AWS CLI, and cfn-signal
+      - UserData must not download, replace, or reinstall application code
+    ref:
+      - at: docs/CREATE_AMI_AND_DEPLOY.md
+        has: Immutable AMI build, sanitation, deploy, update, and rollback procedure
+        scope: stack
+
+Parameters:
+  VpcId:
+    Type: AWS::EC2::VPC::Id
+  SubnetId:
+    Type: AWS::EC2::Subnet::Id
+  AmiId:
+    Type: AWS::EC2::Image::Id
+    Description: Preconfigured WhatsApp Notify AMI created from the base stack
+  InstanceType:
+    Type: String
+    Default: t3.micro
+    AllowedValues:
+      - t3.micro
+      - t3.small
+  AllowedCidr:
+    Type: String
+    AllowedPattern: ^(\d{1,3}\.){3}\d{1,3}/(3[0-2]|[12]?\d)$
+  RootVolumeSize:
+    Type: Number
+    Default: 16
+    MinValue: 12
+    MaxValue: 30
+Resources:
+  InstanceRole:
+    Type: AWS::IAM::Role
+    Properties:
+      AssumeRolePolicyDocument:
+        Version: "2012-10-17"
+        Statement:
+          - Effect: Allow
+            Principal:
+              Service: ec2.amazonaws.com
+            Action: sts:AssumeRole
+      ManagedPolicyArns:
+        - arn:aws:iam::aws:policy/AmazonSSMManagedInstanceCore
+      Tags:
+        - Key: Application
+          Value: whatsapp-notify
+
+  InstanceProfile:
+    Type: AWS::IAM::InstanceProfile
+    Properties:
+      Roles:
+        - !Ref InstanceRole
+
+  ApplicationSecurityGroup:
+    Type: AWS::EC2::SecurityGroup
+    Properties:
+      GroupDescription: Restricted HTTPS access for WhatsApp Notify
+      VpcId: !Ref VpcId
+      SecurityGroupIngress:
+        - Description: HTTPS from the authorized client
+          IpProtocol: tcp
+          FromPort: 443
+          ToPort: 443
+          CidrIp: !Ref AllowedCidr
+      SecurityGroupEgress:
+        - Description: HTTP outbound for package repositories
+          IpProtocol: tcp
+          FromPort: 80
+          ToPort: 80
+          CidrIp: 0.0.0.0/0
+        - Description: HTTPS outbound
+          IpProtocol: tcp
+          FromPort: 443
+          ToPort: 443
+          CidrIp: 0.0.0.0/0
+        - Description: DNS UDP
+          IpProtocol: udp
+          FromPort: 53
+          ToPort: 53
+          CidrIp: 0.0.0.0/0
+        - Description: DNS TCP
+          IpProtocol: tcp
+          FromPort: 53
+          ToPort: 53
+          CidrIp: 0.0.0.0/0
+      Tags:
+        - Key: Application
+          Value: whatsapp-notify
+
+  ApplicationInstance:
+    Type: AWS::EC2::Instance
+    CreationPolicy:
+      ResourceSignal:
+        Count: 1
+        Timeout: PT10M
+    Properties:
+      ImageId: !Ref AmiId
+      InstanceType: !Ref InstanceType
+      IamInstanceProfile: !Ref InstanceProfile
+      SubnetId: !Ref SubnetId
+      SecurityGroupIds:
+        - !Ref ApplicationSecurityGroup
+      CreditSpecification:
+        CPUCredits: standard
+      MetadataOptions:
+        HttpEndpoint: enabled
+        HttpTokens: required
+        HttpPutResponseHopLimit: 1
+      Monitoring: false
+      BlockDeviceMappings:
+        - DeviceName: /dev/sda1
+          Ebs:
+            DeleteOnTermination: true
+            Encrypted: true
+            VolumeSize: !Ref RootVolumeSize
+            VolumeType: gp3
+      Tags:
+        - Key: Name
+          Value: whatsapp-notify
+        - Key: Application
+          Value: whatsapp-notify
+        - Key: Environment
+          Value: free-tier
+      UserData:
+        Fn::Base64: !Sub |
+          #!/bin/bash
+          set -euo pipefail
+          exec > >(tee /var/log/whatsapp-notify-bootstrap.log | logger -t user-data -s 2>/dev/console) 2>&1
+
+          signal_failure() {
+            /opt/cfn-bootstrap/bin/cfn-signal --exit-code 1 \
+              --stack "${AWS::StackName}" \
+              --resource ApplicationInstance \
+              --region "${AWS::Region}" || true
+          }
+          trap signal_failure ERR
+
+          test -x /opt/cfn-bootstrap/bin/cfn-signal
+          test -x /usr/local/bin/aws
+          test -x /opt/whatsapp-notify/app/.venv/bin/python
+          test -x /opt/whatsapp-notify/app/.venv/bin/uvicorn
+          test -x /opt/whatsapp-notify/app/.venv/bin/playwright
+          test -f /etc/systemd/system/whatsapp-notify.service
+          test -f /etc/nginx/sites-available/whatsapp-notify
+
+          systemctl daemon-reload
+          nginx -t
+          systemctl enable --now nginx
+          systemctl enable whatsapp-notify
+          systemctl restart whatsapp-notify
+          for attempt in {1..20}; do
+            if curl --fail --silent --show-error --max-time 5 \
+              http://127.0.0.1:8000/whatsapp/session/status; then
+              echo "WhatsApp Notify health check succeeded."
+              break
+            fi
+
+            if [ "$attempt" -eq 20 ]; then
+              echo "WhatsApp Notify health check failed after 20 attempts."
+              systemctl status whatsapp-notify --no-pager || true
+              journalctl -u whatsapp-notify -n 100 --no-pager || true
+              exit 1
+            fi
+
+            sleep 3
+          done
+
+          /opt/cfn-bootstrap/bin/cfn-signal --exit-code 0 \
+            --stack "${AWS::StackName}" \
+            --resource ApplicationInstance \
+            --region "${AWS::Region}"
+          trap - ERR
+
+Outputs:
+  InstanceId:
+    Description: EC2 instance managed by the stack
+    Value: !Ref ApplicationInstance
+  PublicIp:
+    Description: Auto-assigned public IPv4; changes after stop/start
+    Value: !GetAtt ApplicationInstance.PublicIp
+  SessionManagerCommand:
+    Description: Command to open an SSM shell
+    Value: !Sub "aws ssm start-session --target ${ApplicationInstance} --region ${AWS::Region}"

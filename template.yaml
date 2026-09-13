@@ -41,14 +41,6 @@ Parameters:
     Default: 16
     MinValue: 12
     MaxValue: 30
-  BudgetEmail:
-    Type: String
-    AllowedPattern: ^[^@\s]+@[^@\s]+\.[^@\s]+$
-  BudgetLimitUsd:
-    Type: Number
-    Default: 5
-    MinValue: 1
-
 Resources:
   InstanceRole:
     Type: AWS::IAM::Role
@@ -275,42 +267,28 @@ Resources:
           systemctl enable --now whatsapp-notify
           nginx -t
           systemctl enable --now nginx
-          curl --fail --retry 10 --retry-delay 3 \
-            http://127.0.0.1:8000/whatsapp/session/status
+          for attempt in {1..20}; do
+            if curl --fail --silent --show-error --max-time 5 \
+              http://127.0.0.1:8000/whatsapp/session/status; then
+              echo "WhatsApp Notify health check succeeded."
+              break
+            fi
+
+            if [ "$attempt" -eq 20 ]; then
+              echo "WhatsApp Notify health check failed after 20 attempts."
+              systemctl status whatsapp-notify --no-pager || true
+              journalctl -u whatsapp-notify -n 100 --no-pager || true
+              exit 1
+            fi
+
+            sleep 3
+          done
 
           /opt/cfn-bootstrap/bin/cfn-signal --exit-code 0 \
             --stack "${AWS::StackName}" \
             --resource ApplicationInstance \
             --region "${AWS::Region}"
           trap - ERR
-
-  MonthlyBudget:
-    Type: AWS::Budgets::Budget
-    Properties:
-      Budget:
-        BudgetName: !Sub "${AWS::StackName}-monthly"
-        BudgetLimit:
-          Amount: !Ref BudgetLimitUsd
-          Unit: USD
-        BudgetType: COST
-        TimeUnit: MONTHLY
-      NotificationsWithSubscribers:
-        - Notification:
-            ComparisonOperator: GREATER_THAN
-            NotificationType: ACTUAL
-            Threshold: 80
-            ThresholdType: PERCENTAGE
-          Subscribers:
-            - Address: !Ref BudgetEmail
-              SubscriptionType: EMAIL
-        - Notification:
-            ComparisonOperator: GREATER_THAN
-            NotificationType: FORECASTED
-            Threshold: 100
-            ThresholdType: PERCENTAGE
-          Subscribers:
-            - Address: !Ref BudgetEmail
-              SubscriptionType: EMAIL
 
 Outputs:
   InstanceId:
