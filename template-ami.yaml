@@ -10,6 +10,7 @@ Metadata:
     must:
       - AmiId contains the tested whatsapp-notify release, Python venv, Chromium, nginx, systemd units, AWS CLI, and cfn-signal
       - UserData must not download, replace, or reinstall application code
+      - HTTP ingress on port 80 must originate only from the LotoBot consumer security group
     ref:
       - at: docs/CREATE_AMI_AND_DEPLOY.md
         has: Immutable AMI build, sanitation, deploy, update, and rollback procedure
@@ -29,9 +30,9 @@ Parameters:
     AllowedValues:
       - t3.micro
       - t3.small
-  AllowedCidr:
-    Type: String
-    AllowedPattern: ^(\d{1,3}\.){3}\d{1,3}/(3[0-2]|[12]?\d)$
+  IntegrationSecurityGroupId:
+    Type: AWS::EC2::SecurityGroup::Id
+    Description: Independently managed Security Group attached to the LotoBot consumer in the same VPC.
   RootVolumeSize:
     Type: Number
     Default: 16
@@ -62,15 +63,22 @@ Resources:
 
   ApplicationSecurityGroup:
     Type: AWS::EC2::SecurityGroup
+    Metadata:
+      com.aws.cloudformation.Context:
+        why: restricts the private HTTP API to EC2 network interfaces carrying the LotoBot consumer security group
+        must:
+          - port 80 ingress only from IntegrationSecurityGroupId
+          - never replace the source with a public CIDR
+        mutable: change-with-constraints
     Properties:
-      GroupDescription: Restricted HTTPS access for WhatsApp Notify
+      GroupDescription: Private HTTP access from LotoBot only
       VpcId: !Ref VpcId
       SecurityGroupIngress:
-        - Description: HTTPS from the authorized client
+        - Description: HTTP from the LotoBot security group
           IpProtocol: tcp
-          FromPort: 443
-          ToPort: 443
-          CidrIp: !Ref AllowedCidr
+          FromPort: 80
+          ToPort: 80
+          SourceSecurityGroupId: !Ref IntegrationSecurityGroupId
       SecurityGroupEgress:
         - Description: HTTP outbound for package repositories
           IpProtocol: tcp
@@ -98,6 +106,16 @@ Resources:
 
   ApplicationInstance:
     Type: AWS::EC2::Instance
+    Metadata:
+      com.aws.cloudformation.Context:
+        why: boots the tested immutable release without downloading or reinstalling application code
+        must:
+          - AMI must be sanitized of WhatsApp session data and credentials
+          - IMDSv2 required
+          - exactly one application worker
+        mutable: change-with-constraints
+        mutability:
+          ImageId: review-required
     CreationPolicy:
       ResourceSignal:
         Count: 1
@@ -187,6 +205,9 @@ Outputs:
   PublicIp:
     Description: Auto-assigned public IPv4; changes after stop/start
     Value: !GetAtt ApplicationInstance.PublicIp
+  ApiUrl:
+    Description: Private HTTP base URL consumed by LotoBot inside the VPC
+    Value: !Sub "http://${ApplicationInstance.PrivateDnsName}"
   SessionManagerCommand:
     Description: Command to open an SSM shell
     Value: !Sub "aws ssm start-session --target ${ApplicationInstance} --region ${AWS::Region}"

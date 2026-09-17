@@ -3,7 +3,7 @@
 Este guia começa depois que a primeira instância já foi criada com
 `template.yaml` e testada com sucesso. Se isso ainda não foi feito, volte para
 [`AWS_FREE_TIER_MIGRATION_STEP_BY_STEP.md`](AWS_FREE_TIER_MIGRATION_STEP_BY_STEP.md)
-e conclua as seções 7 a 13.
+e conclua o primeiro deploy e a validação operacional.
 
 Uma instância EC2 não é iniciada diretamente por um snapshot EBS. O procedimento
 correto é criar uma AMI; durante essa operação, a AWS cria e associa
@@ -37,8 +37,8 @@ Execute os comandos PowerShell a partir da raiz do projeto, onde estão
 - um perfil AWS autenticado;
 - a stack original criada com `template.yaml`;
 - acesso à instância pelo Systems Manager;
-- os valores de `$VpcId`, `$SubnetId`, `$InstanceType` e `$AllowedCidr` usados
-  no guia principal.
+- os valores de `$VpcId`, `$SubnetId`, `$InstanceType` e
+  `$IntegrationSecurityGroupId` usados no guia principal.
 
 Valores entre `<` e `>` precisam ser substituídos. Antes de executar um comando
 que altera recursos, confira o perfil, a região, o ID da instância e o ID da AMI.
@@ -49,7 +49,7 @@ No PowerShell:
 
 ```powershell
 $StackName = "whatsapp-notify"
-$AwsRegion = "us-east-1"
+$AwsRegion = "sa-east-1"
 $AwsProfile = "<perfil-aws>"
 $ImageName = "whatsapp-notify-release-$(Get-Date -Format 'yyyyMMdd-HHmmss')"
 
@@ -199,7 +199,7 @@ sam deploy `
     SubnetId=$SubnetId `
     AmiId=$AmiId `
     InstanceType=$InstanceType `
-    AllowedCidr=$AllowedCidr `
+    IntegrationSecurityGroupId=$IntegrationSecurityGroupId `
     RootVolumeSize=16
 ```
 
@@ -232,8 +232,10 @@ aws cloudformation describe-stacks `
 ```
 
 O deploy está pronto para homologação quando a stack estiver em
-`CREATE_COMPLETE` e o output `InstanceId` tiver sido criado. Teste primeiro por
-túnel SSM, conforme a seção 13 do guia principal.
+`CREATE_COMPLETE` e os outputs `InstanceId` e `ApiUrl` tiverem sido criados.
+Teste primeiro por Session Manager e confirme, a partir do `loto-bot`, que o
+DNS privado responde por HTTP na porta 80. Não envie chave de API: a autorização
+é feita pela referência ao Security Group consumidor.
 
 ## 6. Atualizar, fazer rollback ou remover
 
@@ -285,14 +287,15 @@ sam deploy `
     SubnetId=$SubnetId `
     AmiId=$PreviousAmiId `
     InstanceType=$InstanceType `
-    AllowedCidr=$AllowedCidr `
+    IntegrationSecurityGroupId=$IntegrationSecurityGroupId `
     RootVolumeSize=16
 ```
 
 Confirme no change set que `ApplicationInstance` será substituída. Aguarde
-`UPDATE_COMPLETE`, conecte pelo Session Manager e execute o smoke test da seção
-29 do guia principal. Se não restaurar um backup do perfil, autentique o
-WhatsApp novamente.
+`UPDATE_COMPLETE`, conecte pelo Session Manager e execute o smoke test do guia
+principal. Se não restaurar um backup do perfil, autentique o WhatsApp
+novamente. Confirme também que o output `ApiUrl` continua configurado como
+`WhatsAppNotifyUrl` no deploy do `loto-bot`.
 
 Não desabilite nem remova a AMI anterior antes de concluir esse teste.
 
@@ -404,5 +407,5 @@ Não use remoção recursiva em bucket compartilhado. Para excluir o bucket
 inteiro, confira antes o conteúdo e o versionamento. Buckets com versionamento
 `Enabled` ou `Suspended` exigem também a remoção das versões e delete markers.
 
-O procedimento completo para bucket, snapshots de backup, Elastic IP, DNS e
-budget está nas seções 30.3 a 30.7 do guia principal.
+Antes de remover recursos, confirme que eles não são utilizados pela stack do
+`loto-bot`, pela stack baseada em AMI ou por uma release de rollback.
