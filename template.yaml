@@ -6,6 +6,11 @@ Metadata:
   AWSToolsMetrics:
     AWSAgentToolkit: aws-cloudformation@2
   com.aws.cloudformation.Context:
+    arch: LotoBot shared dual-stack VPC -> private IPv4 HTTP -> one persistent WhatsApp Notify EC2
+    must:
+      - VpcId, SubnetId and IntegrationSecurityGroupId must come from the LotoBot network procedure
+      - assign no public IPv4; keep IPv6 egress for bootstrap and WhatsApp Web
+      - the shared VPC must provide a CloudFormation interface endpoint with Private DNS for cfn-signal
     ref:
       - at: docs/AWS_FREE_TIER_MIGRATION_STEP_BY_STEP.md
         has: EC2 architecture and bootstrap constraints
@@ -14,8 +19,10 @@ Metadata:
 Parameters:
   VpcId:
     Type: AWS::EC2::VPC::Id
+    Description: VPC compartilhada criada pelo procedimento do loto-bot.
   SubnetId:
     Type: AWS::EC2::Subnet::Id
+    Description: Subnet dual-stack compartilhada criada pelo procedimento do loto-bot.
   AmiId:
     Type: AWS::EC2::Image::Id
   InstanceType:
@@ -24,6 +31,14 @@ Parameters:
     AllowedValues:
       - t3.micro
       - t3.small
+  KeyName:
+    Type: AWS::EC2::KeyPair::KeyName
+    Description: Existing EC2 key pair used only for restricted IPv6 SSH recovery access.
+  AllowedSshIpv6Cidr:
+    Type: String
+    AllowedPattern: ^[0-9A-Fa-f:]+/128$
+    ConstraintDescription: Must be one IPv6 address with the /128 prefix.
+    Description: Public IPv6 /128 of the authorized SSH client.
   IntegrationSecurityGroupId:
     Type: AWS::EC2::SecurityGroup::Id
     Description: Independently managed Security Group attached to the LotoBot consumer.
@@ -74,6 +89,15 @@ Resources:
 
   ApplicationSecurityGroup:
     Type: AWS::EC2::SecurityGroup
+    Metadata:
+      com.aws.cloudformation.Context:
+        why: exposes private HTTP to the LotoBot identity, permits recovery SSH from one IPv6 host, and allows dual-stack outbound bootstrap traffic
+        must:
+          - port 80 ingress only from IntegrationSecurityGroupId
+          - never replace the source with a public CIDR
+          - port 22 ingress only from AllowedSshIpv6Cidr /128; never use ::/0
+          - keep IPv6 egress because the shared subnet has no IPv4 internet route
+        mutable: change-with-constraints
     Properties:
       GroupDescription: Private HTTP access from LotoBot only
       VpcId: !Ref VpcId
@@ -83,6 +107,11 @@ Resources:
           FromPort: 80
           ToPort: 80
           SourceSecurityGroupId: !Ref IntegrationSecurityGroupId
+        - Description: Recovery SSH over IPv6 from the authorized client
+          IpProtocol: tcp
+          FromPort: 22
+          ToPort: 22
+          CidrIpv6: !Ref AllowedSshIpv6Cidr
       SecurityGroupEgress:
         - Description: HTTP outbound for Ubuntu package repositories
           IpProtocol: tcp
@@ -104,12 +133,47 @@ Resources:
           FromPort: 53
           ToPort: 53
           CidrIp: 0.0.0.0/0
+        - Description: HTTP over IPv6 for package repositories and redirects
+          IpProtocol: tcp
+          FromPort: 80
+          ToPort: 80
+          CidrIpv6: ::/0
+        - Description: HTTPS over IPv6 for AWS APIs and WhatsApp Web
+          IpProtocol: tcp
+          FromPort: 443
+          ToPort: 443
+          CidrIpv6: ::/0
+        - Description: DNS UDP over IPv6
+          IpProtocol: udp
+          FromPort: 53
+          ToPort: 53
+          CidrIpv6: ::/0
+        - Description: DNS TCP over IPv6
+          IpProtocol: tcp
+          FromPort: 53
+          ToPort: 53
+          CidrIpv6: ::/0
       Tags:
         - Key: Application
           Value: whatsapp-notify
 
   ApplicationInstance:
     Type: AWS::EC2::Instance
+    Metadata:
+      com.aws.cloudformation.Context:
+        why: persistent single-host runtime preserves the WhatsApp browser session inside the shared LotoBot network
+        must:
+          - assign exactly one public IPv6 and no public IPv4
+          - wait for a global IPv6 address and default IPv6 route before internet-dependent bootstrap steps
+          - download cfn-bootstrap from the regional S3 dual-stack endpoint
+          - cfn-signal reaches the standard CloudFormation hostname through the shared interface VPC endpoint and Private DNS
+          - IMDSv2 required
+          - exactly one application worker
+          - start through the whatsapp-notify entry point so LOG_LEVEL and the application log format take effect
+          - use the supplied key pair only for restricted IPv6 SSH recovery
+        mutable: change-with-constraints
+        mutability:
+          KeyName: review-required
     CreationPolicy:
       ResourceSignal:
         Count: 1
@@ -117,6 +181,8 @@ Resources:
     Properties:
       ImageId: !Ref AmiId
       InstanceType: !Ref InstanceType
+      KeyName: !Ref KeyName
+      Ipv6AddressCount: 1
       IamInstanceProfile: !Ref InstanceProfile
       SubnetId: !Ref SubnetId
       SecurityGroupIds:
@@ -146,22 +212,46 @@ Resources:
         Fn::Base64: !Sub |
           #!/bin/bash
           set -euo pipefail
+          export AWS_USE_DUALSTACK_ENDPOINT=true
           exec > >(tee /var/log/whatsapp-notify-bootstrap.log | logger -t user-data -s 2>/dev/console) 2>&1
 
           signal_failure() {
-            /opt/cfn-bootstrap/bin/cfn-signal --exit-code 1 \
-              --stack "${AWS::StackName}" \
-              --resource ApplicationInstance \
-              --region "${AWS::Region}" || true
+            if [ -x /opt/cfn-bootstrap/bin/cfn-signal ]; then
+              /opt/cfn-bootstrap/bin/cfn-signal --exit-code 1 \
+                --stack "${AWS::StackName}" \
+                --resource ApplicationInstance \
+                --region "${AWS::Region}" \
+                --url "https://cloudformation.${AWS::Region}.${AWS::URLSuffix}" || true
+            else
+              echo "cfn-signal is unavailable; bootstrap failed before aws-cfn-bootstrap was installed."
+            fi
           }
           trap signal_failure ERR
 
+          for attempt in {1..60}; do
+            if ip -6 -o addr show scope global | grep -q 'inet6' && \
+               ip -6 route show default | grep -q '^default'; then
+              echo "Global IPv6 address and default route are ready."
+              break
+            fi
+
+            if [ "$attempt" -eq 60 ]; then
+              echo "IPv6 was not ready after 120 seconds."
+              ip -6 addr show || true
+              ip -6 route show || true
+              exit 1
+            fi
+
+            sleep 2
+          done
+
           apt-get update
-          apt-get install -y curl nginx python3.12 python3.12-venv python3-pip unzip
+          apt-get install -y curl nginx openssh-server python3.12 python3.12-venv python3-pip unzip
+          systemctl enable --now ssh
 
           python3.12 -m venv /opt/cfn-bootstrap
           /opt/cfn-bootstrap/bin/pip install \
-            https://s3.amazonaws.com/cloudformation-examples/aws-cfn-bootstrap-py3-latest.tar.gz
+            https://s3.dualstack.${AWS::Region}.${AWS::URLSuffix}/cloudformation-examples/aws-cfn-bootstrap-py3-latest.tar.gz
 
           curl --fail --location --retry 3 \
             https://awscli.amazonaws.com/awscli-exe-linux-x86_64.zip \
@@ -227,7 +317,7 @@ Resources:
           WorkingDirectory=/opt/whatsapp-notify/app
           EnvironmentFile=/etc/whatsapp-notify.env
           Environment=PYTHONPATH=/opt/whatsapp-notify/app/src
-          ExecStart=/opt/whatsapp-notify/app/.venv/bin/uvicorn api.server:app --host 127.0.0.1 --port 8000 --workers 1
+          ExecStart=/opt/whatsapp-notify/app/.venv/bin/whatsapp-notify
           Restart=on-failure
           RestartSec=5
           TimeoutStopSec=30
@@ -287,16 +377,20 @@ Resources:
           /opt/cfn-bootstrap/bin/cfn-signal --exit-code 0 \
             --stack "${AWS::StackName}" \
             --resource ApplicationInstance \
-            --region "${AWS::Region}"
+            --region "${AWS::Region}" \
+            --url "https://cloudformation.${AWS::Region}.${AWS::URLSuffix}"
           trap - ERR
 
 Outputs:
   InstanceId:
     Description: EC2 instance managed by the stack
     Value: !Ref ApplicationInstance
-  PublicIp:
-    Description: Auto-assigned public IPv4; changes after stop/start
-    Value: !GetAtt ApplicationInstance.PublicIp
+  Ipv6LookupCommand:
+    Description: Command that returns the IPv6 assigned to the EC2 primary network interface
+    Value: !Sub >-
+      aws ec2 describe-instances --instance-ids ${ApplicationInstance} --region ${AWS::Region}
+      --query "Reservations[0].Instances[0].NetworkInterfaces[0].Ipv6Addresses[0].Ipv6Address"
+      --output text
   ApiUrl:
     Description: Private HTTP base URL consumed by LotoBot inside the VPC.
     Value: !Sub "http://${ApplicationInstance.PrivateDnsName}"

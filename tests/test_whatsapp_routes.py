@@ -1,6 +1,5 @@
 ﻿from importlib import import_module
 
-import httpx
 import pytest
 from fastapi import Response
 
@@ -8,6 +7,51 @@ from api.server import app
 from api.schemas.notification_schema import NotificationResponse, SessionResponse, SessionStatusResponse
 
 router_module = import_module("api.routers.notification_router")
+
+
+class ASGIResponse:
+    def __init__(self, status_code, headers, content):
+        self.status_code = status_code
+        self.headers = headers
+        self.content = content
+
+    def json(self):
+        import json
+        return json.loads(self.content)
+
+
+async def request(method, path, body=None):
+    import json
+    from urllib.parse import urlsplit
+
+    parsed = urlsplit(path)
+    raw_body = b"" if body is None else json.dumps(body).encode()
+    messages = iter(({"type": "http.request", "body": raw_body, "more_body": False},))
+    started = {}
+    content = bytearray()
+
+    async def receive():
+        return next(messages)
+
+    async def send(message):
+        if message["type"] == "http.response.start":
+            started.update(message)
+        elif message["type"] == "http.response.body":
+            content.extend(message.get("body", b""))
+
+    await app(
+        {
+            "type": "http", "asgi": {"version": "3.0", "spec_version": "2.0"},
+            "http_version": "1.1", "method": method, "scheme": "http",
+            "path": parsed.path, "raw_path": parsed.path.encode(),
+            "query_string": parsed.query.encode(), "root_path": "",
+            "headers": [(b"host", b"testserver")]
+            + ([] if body is None else [(b"content-type", b"application/json")]),
+            "client": ("testclient", 50000), "server": ("testserver", 80),
+        }, receive, send,
+    )
+    headers = {key.decode().lower(): value.decode() for key, value in started["headers"]}
+    return ASGIResponse(started["status"], headers, bytes(content))
 
 
 class FakeRouteHandler:
@@ -49,14 +93,11 @@ class FakeRouteHandler:
 async def test_whatsapp_routes_delegate_to_handler(monkeypatch):
     fake_handler = FakeRouteHandler()
     monkeypatch.setattr(router_module, "notification_handler", fake_handler)
-    transport = httpx.ASGITransport(app=app, raise_app_exceptions=False)
-
-    async with httpx.AsyncClient(transport=transport, base_url="http://testserver") as client:
-        start = await client.get("/whatsapp/session/start?headless=true&timeoutInSecounds=15")
-        qr_code = await client.get("/whatsapp/session/qrcode")
-        session_status = await client.get("/whatsapp/session/status")
-        send = await client.post("/whatsapp/messages/send", json={"contact": "Grupo", "message": "Olá"})
-        stop = await client.get("/whatsapp/session/stop")
+    start = await request("GET", "/whatsapp/session/start?headless=true&timeoutInSecounds=15")
+    qr_code = await request("GET", "/whatsapp/session/qrcode")
+    session_status = await request("GET", "/whatsapp/session/status")
+    send = await request("POST", "/whatsapp/messages/send", {"contact": "Grupo", "message": "Olá"})
+    stop = await request("GET", "/whatsapp/session/stop")
 
     assert start.status_code == 200
     assert start.json()["status"] == "ok"
@@ -80,10 +121,7 @@ async def test_whatsapp_routes_delegate_to_handler(monkeypatch):
 
 @pytest.mark.anyio
 async def test_old_notifications_route_is_not_registered():
-    transport = httpx.ASGITransport(app=app, raise_app_exceptions=False)
-
-    async with httpx.AsyncClient(transport=transport, base_url="http://testserver") as client:
-        response = await client.post("/notifications", json={"contact": "Grupo", "message": "Olá"})
+    response = await request("POST", "/notifications", {"contact": "Grupo", "message": "Olá"})
 
     assert response.status_code == 404
     assert "charset=utf-8" in response.headers["content-type"]
@@ -93,13 +131,10 @@ async def test_old_notifications_route_is_not_registered():
 
 @pytest.mark.anyio
 async def test_send_and_close_route_is_not_registered():
-    transport = httpx.ASGITransport(app=app, raise_app_exceptions=False)
-
-    async with httpx.AsyncClient(transport=transport, base_url="http://testserver") as client:
-        response = await client.post(
-            "/whatsapp/messages/send-and-close",
-            json={"contact": "Grupo", "message": "Olá", "headless": False},
-        )
+    response = await request(
+        "POST", "/whatsapp/messages/send-and-close",
+        {"contact": "Grupo", "message": "Olá", "headless": False},
+    )
 
     assert response.status_code == 404
     assert response.json()["error"]["code"] == "ROTA_NAO_ENCONTRADA"
@@ -107,13 +142,10 @@ async def test_send_and_close_route_is_not_registered():
 
 @pytest.mark.anyio
 async def test_send_with_open_session_rejects_headless_payload():
-    transport = httpx.ASGITransport(app=app, raise_app_exceptions=False)
-
-    async with httpx.AsyncClient(transport=transport, base_url="http://testserver") as client:
-        response = await client.post(
-            "/whatsapp/messages/send",
-            json={"contact": "Grupo", "message": "Olá", "headless": False},
-        )
+    response = await request(
+        "POST", "/whatsapp/messages/send",
+        {"contact": "Grupo", "message": "Olá", "headless": False},
+    )
 
     assert response.status_code == 400
     assert response.json()["error"]["code"] == "REQUISICAO_INVALIDA"
