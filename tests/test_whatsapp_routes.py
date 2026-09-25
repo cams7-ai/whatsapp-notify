@@ -93,7 +93,7 @@ class FakeRouteHandler:
 async def test_whatsapp_routes_delegate_to_handler(monkeypatch):
     fake_handler = FakeRouteHandler()
     monkeypatch.setattr(router_module, "notification_handler", fake_handler)
-    start = await request("GET", "/whatsapp/session/start?headless=true&timeoutInSecounds=15")
+    start = await request("GET", "/whatsapp/session/start?headless=true&timeoutInSeconds=15")
     qr_code = await request("GET", "/whatsapp/session/qrcode")
     session_status = await request("GET", "/whatsapp/session/status")
     send = await request("POST", "/whatsapp/messages/send", {"contact": "Grupo", "message": "Olá"})
@@ -117,6 +117,17 @@ async def test_whatsapp_routes_delegate_to_handler(monkeypatch):
     assert send.status_code == 200
     assert send.json()["contact"] == "Grupo"
     assert stop.status_code == 200
+
+
+@pytest.mark.anyio
+async def test_legacy_timeout_spelling_remains_supported(monkeypatch):
+    fake_handler = FakeRouteHandler()
+    monkeypatch.setattr(router_module, "notification_handler", fake_handler)
+
+    response = await request("GET", "/whatsapp/session/start?timeoutInSecounds=12")
+
+    assert response.status_code == 200
+    assert fake_handler.timeout_seconds == 12
 
 
 @pytest.mark.anyio

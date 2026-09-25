@@ -19,7 +19,7 @@ O isolamento de rede substitui a autenticação por cabeçalho. Não compartilhe
 
 - AWS CLI e SAM CLI;
 - Python 3.12 para testes locais;
-- a VPC e a subnet dual-stack criadas pelo guia do [`loto-bot`](../../loto-bot/docs/AWS_FREE_TIER_MIGRATION_WITH_PROXY_SOCKS5_STEP_BY_STEP.md), com DNS habilitado e rota `::/0`;
+- a VPC e a subnet dual-stack criadas pelo guia do LotoBot, com DNS habilitado e rota `::/0`;
 - o Interface VPC Endpoint compartilhado `com.amazonaws.<regiao>.cloudformation`, em estado `available` e com Private DNS habilitado;
 - um Security Group de integração independente, criado antes das stacks EC2;
 - bucket S3 privado para o artefato;
@@ -134,6 +134,10 @@ O ZIP deve extrair `pyproject.toml` e `src/` na raiz. Não inclua `.env`, `.venv
 
 ## Deploy
 
+Antes do deploy, execute a validação do endpoint CloudFormation com
+`loto-bot/scripts/test-shared-cloudformation-endpoint.ps1` usando o mesmo
+perfil, região e VPC. O `cfn-signal` depende dele.
+
 ```powershell
 sam deploy `
   --template-file template.yaml `
@@ -243,7 +247,7 @@ $InstanceIpv6 = aws ec2 describe-instances `
   --output text --region $AwsRegion --profile $AwsProfile
 
 ssh -6 -i $KeyFile "$RemoteUser@$InstanceIpv6" "curl -i -sSL 'http://127.0.0.1:8000/whatsapp/session/status'"
-ssh -6 -i $KeyFile "$RemoteUser@$InstanceIpv6" "curl -i -sSL 'http://127.0.0.1:8000/whatsapp/session/start?headless=true&timeoutInSecounds=60'"
+ssh -6 -i $KeyFile "$RemoteUser@$InstanceIpv6" "curl -i -sSL 'http://127.0.0.1:8000/whatsapp/session/start?headless=true&timeoutInSeconds=60'"
 ssh -6 -i $KeyFile "$RemoteUser@$InstanceIpv6" "curl -i -sSL 'http://127.0.0.1:8000/whatsapp/session/status'"
 ssh -6 -i $KeyFile "$RemoteUser@$InstanceIpv6" "curl -fL http://127.0.0.1:8000/whatsapp/session/qrcode -o whatsapp-qr.png"
 

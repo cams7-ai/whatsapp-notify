@@ -235,7 +235,8 @@ as requisições.
 
 | Componente | Responsabilidade |
 | --- | --- |
-| `template.yaml` | Provisiona EC2, EBS criptografado, Security Group, IAM, Session Manager e budget via SAM/CloudFormation. |
+| `template.yaml` | Provisiona EC2, EBS criptografado, Security Group e IAM via SAM/CloudFormation. |
+| `template-ami.yaml` | Inicia uma instância com a aplicação previamente incluída em AMI sanitizada. |
 | `samconfig.local.toml` | Exemplo local dos parâmetros de validação e deploy do SAM. |
 | S3 privado | Armazena o ZIP versionado da aplicação usado no bootstrap e nas atualizações. |
 | systemd | Executa um único worker da API e reinicia o serviço após falhas ou reboot. |
@@ -243,7 +244,7 @@ as requisições.
 | EBS gp3 | Persiste o perfil do Chromium em `/opt/whatsapp-notify/data/.whatsapp-profile`. |
 
 Pré-requisitos: AWS CLI v2, AWS SAM CLI, credenciais AWS configuradas e
-permissões para CloudFormation, EC2, IAM, S3, SSM e Budgets. Antes do deploy,
+permissões para CloudFormation, EC2, IAM e S3. Antes do deploy,
 copie `samconfig.local.toml` para `samconfig.toml`, preencha os parâmetros locais
 e envie o artefato da aplicação, sem `.env` ou `.whatsapp-profile`, para o bucket
 S3 privado.
@@ -256,16 +257,16 @@ sam build
 sam deploy
 ```
 
-O primeiro deploy deve ser feito com `sam deploy --guided`. Para homologação,
-acesse a API por encaminhamento de porta do AWS Systems Manager Session Manager,
-sem publicá-la diretamente. Para produção, configure HTTPS no Nginx e restrinja
-o Security Group ao CIDR autorizado.
+Para administrar a instância, use SSH via IPv6 restrito ao endereço autorizado.
+O acesso à API pela EC2 do LotoBot usa HTTP privado e porta 80; nenhuma porta
+HTTP é publicada para a Internet. Session Manager pode ser usado como alternativa
+somente após testar o agente com endpoints dual stack nesta rede.
 
 > O AWS Free Tier não garante gratuidade permanente. EC2, EBS, IPv4 público,
 > snapshots, S3 e outros recursos podem gerar cobrança; valide a modalidade e
 > os créditos da conta e mantenha alertas de budget ativos.
 
-Consulte o roteiro completo de preparação, deploy, acesso por SSM, atualização,
+Consulte o roteiro completo de preparação, deploy, acesso por SSH, atualização,
 backup, rollback e remoção de recursos em
 [AWS_FREE_TIER_MIGRATION_STEP_BY_STEP.md](./docs/AWS_FREE_TIER_MIGRATION_STEP_BY_STEP.md).
 
@@ -284,13 +285,13 @@ backup, rollback e remoção de recursos em
 ### Iniciar Sessão
 
 ```http
-GET /whatsapp/session/start?headless=false&timeoutInSecounds=60
+GET /whatsapp/session/start?headless=false&timeoutInSeconds=60
 ```
 
 | Query Param | Tipo | Obrigatório | Descrição |
 | --- | --- | --- | --- |
 | `headless` | `boolean` | Não | Sobrescreve `WHATSAPP_HEADLESS` nesta abertura de sessão. |
-| `timeoutInSecounds` | `integer` | Não | Sobrescreve `WHATSAPP_TIMEOUT_SECONDS` nesta abertura de sessão. |
+| `timeoutInSeconds` | `integer` | Não | Sobrescreve `WHATSAPP_TIMEOUT_SECONDS` nesta abertura de sessão. A grafia antiga `timeoutInSecounds` continua aceita temporariamente. |
 
 Resposta:
 
