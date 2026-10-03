@@ -187,7 +187,19 @@ LOG_LEVEL=INFO
 
 ## Execução Local
 
-Crie e ative o ambiente virtual:
+No Linux (Bash), crie e ative o ambiente virtual:
+
+```bash
+python3.12 -m venv .venv
+source .venv/bin/activate
+python -m pip install -e '.[dev]'
+python -m playwright install --with-deps chromium
+python -m main
+```
+
+Em outra sessão, após ativar o ambiente, você também pode iniciar a API com `whatsapp-notify`.
+
+No Windows (PowerShell), crie e ative o ambiente virtual:
 
 ```powershell
 python -m venv .venv
@@ -244,18 +256,22 @@ as requisições.
 | EBS gp3 | Persiste o perfil do Chromium em `/opt/whatsapp-notify/data/.whatsapp-profile`. |
 
 Pré-requisitos: AWS CLI v2, AWS SAM CLI, credenciais AWS configuradas e
-permissões para CloudFormation, EC2, IAM e S3. Antes do deploy,
-copie `samconfig.local.toml` para `samconfig.toml`, preencha os parâmetros locais
-e envie o artefato da aplicação, sem `.env` ou `.whatsapp-profile`, para o bucket
-S3 privado.
+permissões para CloudFormation, EC2, IAM e S3. Antes do deploy, prepare os
+parâmetros da stack e envie o artefato da aplicação, sem `.env` ou
+`.whatsapp-profile`, para um bucket S3 privado. `samconfig.local.toml` pode ser
+copiado para `samconfig.toml` e preenchido se você preferir guardar os
+parâmetros localmente.
 
-Valide e implante:
+Valide e implante com SAM CLI:
 
 ```powershell
 sam validate --lint
 sam build
 sam deploy
 ```
+
+No Linux, execute os comandos no Bash. Os guias abaixo trazem os parâmetros e
+as verificações necessários para cada fluxo.
 
 Para administrar a instância, use SSH via IPv6 restrito ao endereço autorizado.
 O acesso à API pela EC2 do LotoBot usa HTTP privado e porta 80; nenhuma porta
@@ -266,9 +282,12 @@ somente após testar o agente com endpoints dual stack nesta rede.
 > snapshots, S3 e outros recursos podem gerar cobrança; valide a modalidade e
 > os créditos da conta e mantenha alertas de budget ativos.
 
-Consulte o roteiro completo de preparação, deploy, acesso por SSH, atualização,
-backup, rollback e remoção de recursos em
-[AWS_FREE_TIER_MIGRATION_STEP_BY_STEP.md](./docs/AWS_FREE_TIER_MIGRATION_STEP_BY_STEP.md).
+Guias por plataforma:
+
+| Plataforma | Primeira implantação | Release por AMI |
+| --- | --- | --- |
+| Linux (Bash) | [Migração passo a passo](./docs/AWS_FREE_TIER_MIGRATION_STEP_BY_STEP_LINUX.md) | [Criar AMI e fazer deploy](./docs/CREATE_AMI_AND_DEPLOY_LINUX.md) |
+| Windows (PowerShell) | [Migração passo a passo](./docs/AWS_FREE_TIER_MIGRATION_STEP_BY_STEP.md) | [Criar AMI e fazer deploy](./docs/CREATE_AMI_AND_DEPLOY.md) |
 
 ## Contrato da API
 
@@ -418,6 +437,12 @@ Quando aplicável, a resposta inclui os campos inválidos ou ausentes:
 ## Testes
 
 Execute a suíte com cobertura:
+
+```bash
+./.venv/bin/python -m pytest --cov=src --cov-report=term-missing -q
+```
+
+No Windows (PowerShell):
 
 ```powershell
 .\.venv\Scripts\python.exe -m pytest --cov=src --cov-report=term-missing -q
