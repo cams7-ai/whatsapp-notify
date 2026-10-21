@@ -5,8 +5,10 @@ lint = true
 
 [default.deploy.parameters]
 stack_name = "whatsapp-notify"
+resolve_s3 = true
+s3_prefix = "whatsapp-notify"
 region = "us-east-1"
 capabilities = "CAPABILITY_IAM"
 confirm_changeset = true
 profile = "<perfil-aws>"
-parameter_overrides = "VpcId=<vpc-id> SubnetId=<subnet-id> AmiId=<ami-id> InstanceType=t3.micro AllowedCidr=<ip/32> ArtifactBucket=<bucket> ArtifactKey=whatsapp-notify/releases/<versao>/whatsapp-notify.zip ArtifactSha256=<sha256> RootVolumeSize=16"
+parameter_overrides = "VpcId=\"<loto-bot-vpc-id>\" SubnetId=\"<loto-bot-subnet-id>\" AmiId=\"<ami-id>\" InstanceType=\"<instance-type>\" KeyName=\"whatsapp-notify\" AllowedSshIpv6Cidr=\"<ipv6-publico-local>/128\" IntegrationSecurityGroupId=\"<loto-bot-integration-security-group-id>\" ArtifactBucket=\"<artifact-bucket>\" ArtifactKey=\"<artifact-key>\" ArtifactSha256=\"<artifact-sha256>\" RootVolumeSize=16"

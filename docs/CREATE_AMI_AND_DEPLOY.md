@@ -3,7 +3,7 @@
 Este guia começa depois que a primeira instância já foi criada com
 `template.yaml` e testada com sucesso. Se isso ainda não foi feito, volte para
 [`AWS_FREE_TIER_MIGRATION_STEP_BY_STEP.md`](AWS_FREE_TIER_MIGRATION_STEP_BY_STEP.md)
-e conclua as seções 7 a 13.
+e conclua o primeiro deploy e a validação operacional.
 
 Uma instância EC2 não é iniciada diretamente por um snapshot EBS. O procedimento
 correto é criar uma AMI; durante essa operação, a AWS cria e associa
@@ -36,9 +36,21 @@ Execute os comandos PowerShell a partir da raiz do projeto, onde estão
 - AWS CLI e SAM CLI instalados;
 - um perfil AWS autenticado;
 - a stack original criada com `template.yaml`;
-- acesso à instância pelo Systems Manager;
-- os valores de `$VpcId`, `$SubnetId`, `$InstanceType` e `$AllowedCidr` usados
-  no guia principal.
+- acesso à instância pelo SSH IPv6 restrito configurado no guia principal;
+- os valores de `$VpcId`, `$SubnetId`, `$InstanceType` e
+  `$SecurityGroupId` usados no guia principal; os três identificadores
+  de rede devem ser os mesmos criados pelo procedimento do `loto-bot`.
+
+O `template-ami.yaml` mantém a instância na subnet dual-stack compartilhada,
+atribui um IPv6, aguarda o endereço global e a rota IPv6 default antes de
+executar as verificações da AMI e sinalizar o CloudFormation, habilita endpoints
+AWS dual-stack no bootstrap e não depende de IPv4 público.
+
+Antes do deploy, confirme que o Interface VPC Endpoint compartilhado
+`com.amazonaws.<regiao>.cloudformation`, criado pelo guia principal do
+`loto-bot`, está `available` e com Private DNS habilitado. Tanto o template base
+quanto o template de AMI dependem desse endpoint para entregar o `cfn-signal`
+sem NAT ou IPv4 público.
 
 Valores entre `<` e `>` precisam ser substituídos. Antes de executar um comando
 que altera recursos, confira o perfil, a região, o ID da instância e o ID da AMI.
@@ -48,10 +60,52 @@ que altera recursos, confira o perfil, a região, o ID da instância e o ID da A
 No PowerShell:
 
 ```powershell
+$AppName = "loto-bot"
 $StackName = "whatsapp-notify"
 $AwsRegion = "us-east-1"
 $AwsProfile = "<perfil-aws>"
-$ImageName = "whatsapp-notify-release-$(Get-Date -Format 'yyyyMMdd-HHmmss')"
+$ImageName = "$StackName-release-$(Get-Date -Format 'yyyyMMdd-HHmmss')"
+$InstanceType = "t3.micro"
+$RemoteUser = "ubuntu"
+$KeyName = $StackName
+$KeyFile = Join-Path $HOME ".ssh\$KeyName.pem"
+$KnownHostsFile = Join-Path $HOME ".ssh\$KeyName-known-hosts"
+$LocalPublicIpv6 = (curl.exe -6 -fsS https://api64.ipify.org).Trim()
+$AllowedSshIpv6Cidr = "$LocalPublicIpv6/128"
+$AwsCommon = @("--region", $AwsRegion, "--profile", $AwsProfile)
+$VpcId = aws ec2 describe-vpcs `
+    --filters "Name=tag:Name,Values=$AppName" `
+              "Name=tag:Application,Values=$AppName" `
+    --query "Vpcs[0].VpcId" `
+    --region $AwsRegion `
+    --profile $AwsProfile `
+    --output text
+$AvailabilityZone = aws ec2 describe-availability-zones `
+  --filters "Name=state,Values=available" `
+  --query "AvailabilityZones[0].ZoneName" `
+  --region $AwsRegion `
+  --profile $AwsProfile `
+  --output text
+$SubnetId = aws ec2 describe-subnets `
+    --filters "Name=vpc-id,Values=$VpcId" `
+              "Name=availability-zone,Values=$AvailabilityZone" `
+              "Name=tag:Name,Values=$AppName" `
+              "Name=tag:Application,Values=$AppName" `
+    --query "Subnets[0].SubnetId" `
+    --region $AwsRegion `
+    --profile $AwsProfile `
+    --output text
+$SecurityGroupId = aws ec2 describe-security-groups `
+  --filters "Name=vpc-id,Values=$VpcId" "Name=group-name,Values=$AppName" `
+  --query "SecurityGroups[0].GroupId" --output text `
+  --region $AwsRegion --profile $AwsProfile
+
+aws ec2 describe-subnets --subnet-ids $SubnetId `
+  --query "Subnets[0].{VpcId:VpcId,Ipv6:Ipv6CidrBlockAssociationSet[0].Ipv6CidrBlock,MapPublicIp:MapPublicIpOnLaunch}" `
+  --output table --region $AwsRegion --profile $AwsProfile
+aws ec2 describe-security-groups --group-ids $SecurityGroupId `
+  --query "SecurityGroups[0].{GroupId:GroupId,VpcId:VpcId}" `
+  --output table --region $AwsRegion --profile $AwsProfile
 
 $InstanceId = aws cloudformation describe-stacks `
   --stack-name $StackName `
@@ -76,16 +130,41 @@ Antes da limpeza, confirme que a aplicação e o navegador funcionam e que esta 
 a versão que deve entrar na AMI. Depois da limpeza, a sessão do WhatsApp será
 apagada da instância de construção.
 
-No computador Windows, abra uma sessão:
+No computador Windows, use o SSH IPv6. O Key Pair e o `/128` autorizado devem
+ser os mesmos informados no deploy da stack original:
 
 ```powershell
-aws ssm start-session `
-  --target $InstanceId `
-  --region $AwsRegion `
-  --profile $AwsProfile
+$InstanceIpv6 = aws ec2 describe-instances `
+  --instance-ids $InstanceId `
+  --query "Reservations[0].Instances[0].NetworkInterfaces[0].Ipv6Addresses[0].Ipv6Address" `
+  --output text --region $AwsRegion --profile $AwsProfile
+
+ssh -6 -i $KeyFile "$RemoteUser@$InstanceIpv6"
 ```
 
-Quando o prompt da EC2 aparecer, execute o bloco Bash abaixo. Ele para a
+Nunca amplie a regra SSH para `::/0`. Se o IPv6 público local mudar, atualize
+`AllowedSshIpv6Cidr` na stack antes da conexão.
+
+Na instância de construção, confira se a unidade systemd inicia por
+`/opt/whatsapp-notify/app/.venv/bin/whatsapp-notify`, e não diretamente pelo
+Uvicorn. Esse ponto de entrada aplica `LOG_LEVEL` e o formato de log da
+aplicação. Se a unidade ainda for a antiga, encerre qualquer sessão em
+andamento e crie um override com `sudo systemctl edit whatsapp-notify`:
+
+```ini
+[Service]
+ExecStart=
+ExecStart=/opt/whatsapp-notify/app/.venv/bin/whatsapp-notify
+```
+
+Execute `sudo systemctl daemon-reload`, reinicie o serviço e confira
+`sudo systemctl cat whatsapp-notify` antes de higienizar a instância. O override
+ficará na AMI. O `template-ami.yaml` não reescreve a unidade systemd nem corrige
+uma AMI antiga; para esse fluxo permanente, gere uma nova AMI a partir da
+instância corrigida. Mantenha `LOG_LEVEL=INFO` na imagem; use `DEBUG` apenas
+temporariamente para diagnóstico e revise os logs antes de compartilhá-los.
+
+Após essa verificação, execute o bloco Bash abaixo. Ele para a
 aplicação, impede inicialização prematura nas cópias e remove dados que não
 devem ser clonados:
 
@@ -96,6 +175,7 @@ sudo find /opt/whatsapp-notify/data/.whatsapp-profile -mindepth 1 -delete
 sudo rm -f /root/.bash_history /home/*/.bash_history
 sudo find /root /home /opt/whatsapp-notify -type f \
   \( -name '.env' -o -name '*.pem' -o -name '*.key' \) -delete
+sudo rm -f /etc/ssh/ssh_host_*
 sudo sync
 exit
 ```
@@ -107,6 +187,9 @@ tenha sido alterado manualmente.
 > A limpeza do perfil encerra a sessão do WhatsApp nas futuras instâncias. Não
 > grave uma sessão autenticada na AMI: qualquer instância criada a partir dela
 > receberia uma cópia dessas credenciais.
+
+As chaves de host SSH também são removidas para que o `cloud-init` gere uma
+identidade nova no primeiro boot de cada instância criada a partir da AMI.
 
 Ao executar `exit`, você volta ao PowerShell do computador local. Os próximos
 comandos não devem ser executados dentro da EC2.
@@ -122,7 +205,7 @@ $AmiId = aws ec2 create-image `
   --instance-id $InstanceId `
   --name $ImageName `
   --description "Immutable WhatsApp Notify application release" `
-  --tag-specifications "ResourceType=image,Tags=[{Key=Application,Value=whatsapp-notify},{Key=Name,Value=$ImageName}]" `
+  --tag-specifications "ResourceType=image,Tags=[{Key=Application,Value=$StackName},{Key=Name,Value=$ImageName}]" `
   --region $AwsRegion `
   --profile $AwsProfile `
   --query ImageId `
@@ -158,12 +241,7 @@ captura para impedir que a aplicação inicie antes da validação do novo boot,
 habilite-os novamente caso a instância original continue em uso:
 
 ```powershell
-aws ssm send-command `
-  --instance-ids $InstanceId `
-  --document-name "AWS-RunShellScript" `
-  --parameters 'commands=["sudo systemctl enable --now nginx whatsapp-notify"]' `
-  --region $AwsRegion `
-  --profile $AwsProfile
+ssh -6 -i $KeyFile "$RemoteUser@$InstanceIpv6" "sudo systemctl enable --now nginx whatsapp-notify"
 ```
 
 Será necessário autenticar novamente o WhatsApp porque o perfil foi removido.
@@ -186,11 +264,9 @@ Depois use outro nome de stack no primeiro teste para não substituir
 imediatamente a instância atual:
 
 ```powershell
-$AmiStackName = "whatsapp-notify-ami"
-
 sam deploy `
   --template-file template-ami.yaml `
-  --stack-name $AmiStackName `
+  --stack-name $StackName `
   --region $AwsRegion `
   --profile $AwsProfile `
   --capabilities CAPABILITY_IAM `
@@ -199,7 +275,9 @@ sam deploy `
     SubnetId=$SubnetId `
     AmiId=$AmiId `
     InstanceType=$InstanceType `
-    AllowedCidr=$AllowedCidr `
+    KeyName=$KeyName `
+    AllowedSshIpv6Cidr=$AllowedSshIpv6Cidr `
+    IntegrationSecurityGroupId=$SecurityGroupId `
     RootVolumeSize=16
 ```
 
@@ -219,12 +297,12 @@ Espere a conclusão e consulte os outputs:
 
 ```powershell
 aws cloudformation wait stack-create-complete `
-  --stack-name $AmiStackName `
+  --stack-name $StackName `
   --region $AwsRegion `
   --profile $AwsProfile
 
 aws cloudformation describe-stacks `
-  --stack-name $AmiStackName `
+  --stack-name $StackName `
   --query "Stacks[0].Outputs" `
   --output table `
   --region $AwsRegion `
@@ -232,8 +310,47 @@ aws cloudformation describe-stacks `
 ```
 
 O deploy está pronto para homologação quando a stack estiver em
-`CREATE_COMPLETE` e o output `InstanceId` tiver sido criado. Teste primeiro por
-túnel SSM, conforme a seção 13 do guia principal.
+`CREATE_COMPLETE` e os outputs `InstanceId` e `ApiUrl` tiverem sido criados.
+Valide pelo SSH IPv6 restrito. Confirme, a partir do `loto-bot`, que o
+DNS privado responde por HTTP na porta 80. Não envie chave de API: a autorização
+é feita pela referência ao Security Group consumidor.
+
+Para executar a homologação completa pelo SSH IPv6, incluindo a captura do QR
+code e o envio de uma mensagem de teste, use no PowerShell local:
+
+```powershell
+$InstanceId = aws cloudformation describe-stack-resource --stack-name $StackName --logical-resource-id ApplicationInstance --query "StackResourceDetail.PhysicalResourceId" --output text --region $AwsRegion --profile $AwsProfile
+
+$InstanceIpv6 = aws ec2 describe-instances `
+  --instance-ids $InstanceId `
+  --query "Reservations[0].Instances[0].NetworkInterfaces[0].Ipv6Addresses[0].Ipv6Address" `
+  --output text --region $AwsRegion --profile $AwsProfile
+
+ssh -6 -i $KeyFile "$RemoteUser@$InstanceIpv6" "curl -i -sSL 'http://127.0.0.1:8000/whatsapp/session/status'"
+ssh -6 -i $KeyFile "$RemoteUser@$InstanceIpv6" "curl -i -sSL 'http://127.0.0.1:8000/whatsapp/session/start?headless=true&timeoutInSecounds=60'"
+ssh -6 -i $KeyFile "$RemoteUser@$InstanceIpv6" "curl -i -sSL 'http://127.0.0.1:8000/whatsapp/session/status'"
+ssh -6 -i $KeyFile "$RemoteUser@$InstanceIpv6" "curl -fL http://127.0.0.1:8000/whatsapp/session/qrcode -o whatsapp-qr.png"
+
+$QRCodeFile = Join-Path $env:TEMP "whatsapp-qr.png"
+scp @SshOptions -- "$RemoteUser@[${InstanceIpv6}]:/home/ubuntu/whatsapp-qr.png" $QRCodeFile
+
+ssh -6 -i $KeyFile "$RemoteUser@$InstanceIpv6" "curl -i -sSL 'http://127.0.0.1:8000/whatsapp/session/status'"
+
+$DateTime = Get-Date -Format "yyyy-MM-dd HH:mm:ss"
+$Json = @{
+    contact = "Notificação via App"
+    message = "Mensagem de homologação executado em $DateTime"
+} | ConvertTo-Json -Compress
+$JsonBase64 = [Convert]::ToBase64String(
+    [Text.Encoding]::UTF8.GetBytes($Json)
+)
+ssh -6 -i $KeyFile "$RemoteUser@$InstanceIpv6" `
+    "echo '$JsonBase64' | base64 -d | curl -i -sSL -X POST 'http://127.0.0.1:8000/whatsapp/messages/send' -H 'Content-Type: application/json; charset=utf-8' --data-binary @-"
+
+ssh -6 -i $KeyFile "$RemoteUser@$InstanceIpv6" "curl -i -sSL 'http://127.0.0.1:8000/whatsapp/session/stop'"
+
+ssh -6 -i $KeyFile "$RemoteUser@$InstanceIpv6" "sudo journalctl -u whatsapp-notify -n 200 -f"
+```
 
 ## 6. Atualizar, fazer rollback ou remover
 
@@ -275,7 +392,7 @@ volume raiz atual. Depois atualize a stack com todos os parâmetros obrigatório
 ```powershell
 sam deploy `
   --template-file template-ami.yaml `
-  --stack-name $AmiStackName `
+  --stack-name $StackName `
   --region $AwsRegion `
   --profile $AwsProfile `
   --capabilities CAPABILITY_IAM `
@@ -285,14 +402,17 @@ sam deploy `
     SubnetId=$SubnetId `
     AmiId=$PreviousAmiId `
     InstanceType=$InstanceType `
-    AllowedCidr=$AllowedCidr `
+    KeyName=$KeyName `
+    AllowedSshIpv6Cidr=$AllowedSshIpv6Cidr `
+    IntegrationSecurityGroupId=$SecurityGroupId `
     RootVolumeSize=16
 ```
 
 Confirme no change set que `ApplicationInstance` será substituída. Aguarde
-`UPDATE_COMPLETE`, conecte pelo Session Manager e execute o smoke test da seção
-29 do guia principal. Se não restaurar um backup do perfil, autentique o
-WhatsApp novamente.
+`UPDATE_COMPLETE`, conecte pelo SSH IPv6 restrito e execute o smoke test do
+guia principal. Se não restaurar um backup do perfil, autentique o WhatsApp
+novamente. Confirme também que o output `ApiUrl` continua configurado como
+`WhatsAppNotifyUrl` no deploy do `loto-bot`.
 
 Não desabilite nem remova a AMI anterior antes de concluir esse teste.
 
@@ -375,7 +495,7 @@ Para listar os artefatos sem removê-los:
 ```powershell
 aws s3api list-objects-v2 `
   --bucket $ArtifactBucket `
-  --prefix "whatsapp-notify/releases/" `
+  --prefix "$StackName/releases/" `
   --query "Contents[].{Key:Key,Modified:LastModified,Size:Size}" `
   --output table `
   --region $AwsRegion `
@@ -404,5 +524,5 @@ Não use remoção recursiva em bucket compartilhado. Para excluir o bucket
 inteiro, confira antes o conteúdo e o versionamento. Buckets com versionamento
 `Enabled` ou `Suspended` exigem também a remoção das versões e delete markers.
 
-O procedimento completo para bucket, snapshots de backup, Elastic IP, DNS e
-budget está nas seções 30.3 a 30.7 do guia principal.
+Antes de remover recursos, confirme que eles não são utilizados pela stack do
+`loto-bot`, pela stack baseada em AMI ou por uma release de rollback.

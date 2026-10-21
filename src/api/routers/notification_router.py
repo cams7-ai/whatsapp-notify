@@ -44,11 +44,12 @@ ERROR_RESPONSES = {
 )
 async def start_whatsapp_session(
     headless: bool | None = Query(default=None),
-    timeoutInSecounds: int | None = Query(default=None, gt=0),
+    timeoutInSeconds: int | None = Query(default=None, gt=0),
+    timeoutInSecounds: int | None = Query(default=None, gt=0, deprecated=True),
 ) -> SessionResponse:
     return await notification_handler.start_session(
         headless=headless,
-        timeout_seconds=timeoutInSecounds,
+        timeout_seconds=timeoutInSeconds if timeoutInSeconds is not None else timeoutInSecounds,
     )
 
 
